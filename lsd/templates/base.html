@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Social Network Management" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <link rel="stylesheet" href="/static/main.css" />
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+    {% block head %}
+    <title>Site Title</title>
+    {% endblock head %}
+  </head>
+  <body>
+    <header id="header">
+      {% block header %}
+      <div class="header-logo">
+        <img src="/static/Bacchus_Logo_Black.png" alt="logo" class="logo" />
+        <h1>Page Title</h1>
+      </div>
+      <nav>
+          <input class="menu-btn" type="checkbox" id="menu-btn" />
+          <label class="menu-icon" for="menu-btn">
+            <span class="navicon"></span>
+          </label>
+          <ul class="menu">
+            <li><a href="{{ url_for('home') }}">Home</a></li>
+          </ul>
+      </nav>
+      {% endblock header %}
+      {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div id="flash-messages">
+        {% for message in messages %}
+        <h4>{{ message }}</h4>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+    </header>
+    <main>
+
+      <div class="intro">
+      {% block intro %}
+        <p class="platform-user-header status">
+          Using the Platform as - ' user name display'
+        </p>
+      {% endblock intro %}
+      </div>
+
+    {% block content %}
+      <h3>Main Content</h3>
+      <p>content goes here.</p>
+      <p class="hide-content">
+        Usually The 'intro' section would have an 'h2' tag with a css class of 'status'.
+        This paragraph should not be seen because of the .hide_content rule in the CSS file.
+      </p>
+    {% endblock content %}
+
+    {% if local_data %}
+    {% block local_test %}
+      <h3>Local Data</h3>
+      <p><a href="{{ url_for('open_test', **local_data) }}">Test Route</a></p>
+      <p>{{ local_data|e }}</p>
+    {% endblock local_test %}
+    {% endif %}
+    </main>
+    <footer>
+      <p>
+        <a href="{{ url_for('home')}}">Home</a> |
+        <a href="{{ url_for('render_static', page_name='privacy') }}">Privacy</a> |
+        <a href="{{ url_for('render_static', page_name='tos') }}">Terms of Service</a>
+      </p>
+    </footer>
+
+  </body>
+</html>

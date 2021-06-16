@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block head %}
+<title>{{ mod|title }} View Page</title>
+{% endblock head %}
+
+{% block intro %}
+    <h2 class="status">
+      Title
+    </h2>
+    {{ super() }}
+{% endblock intro %}
+
+{% block content %}
+  {% block data_view %}
+  <ul>
+  {% for key in data.keys() %}
+    <li>{% include 'data_expand.html' %}</li>
+  {% else %}<li>NO DATA</li>
+  {% endfor %}
+  </ul>
+  {% endblock data_view %}
+
+  {% block modify %}
+  <h3>Change Data Actions</h3>
+  <ul>
+    <li><a href="">Link Text</a></li>
+    <li><a href="">Link Text</a></li>
+    <li><a href="">Link Text</a></li>
+  </ul>
+  {% endblock modify %}
+{% endblock content %}

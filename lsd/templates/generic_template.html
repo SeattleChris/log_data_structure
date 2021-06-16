@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block head %}
+<title>Insert Page Title Here</title>
+{% endblock head %}
+
+{% block intro %}
+  <h2 class="status">Some Page Intro Heading</h2>
+  <p class="status">Paragraph that stays on compressed intro because of 'status' css class. </p>
+  <ul title="Title placed at beginning of line">
+    <li>Some</li>
+    <li>Intro</li>
+    <li>Unordered List</li>
+  </ul>
+  <ol title="Also Title Magic">
+    <li>Some</li>
+    <li>Intro</li>
+    <li>Ordered List</li>
+  </ol>
+  {{ super() }}
+{% endblock intro %}
+
+{% block content %}
+  <h3>An H-tag that comes after the site and specific page H-tags</h3>
+  <p>Some Content
+  </p>
+
+  <ul>
+    <li><a href="{{ url_for('home') }}">Link example Home</a></li>
+  </ul>
+{% endblock content %}

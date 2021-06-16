@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block intro %}
+    {{ super() }}
+    <p>
+      paragraph content inside the intro block, after super was called.
+    </p>
+{% endblock intro %}
+
+{% block content %}
+  <section class="main-content-box">
+    <h2>content block > section.main-content-box > h2 Header</h2>
+    <p>
+      Content paragraph.
+    </p>
+    <h2>Second Header in same section</h2>
+    <div class="sub-main-content">
+      <h3>sub main content</h3>
+      <p>
+        Paragraph content inside div.sub-main-content.
+      </p>
+    </div>
+  </section>
+  <section class="main-content-box">
+    <h2>Second section.main-content-box > h2 Header</h2>
+    <div class="sub-main-content">
+      <h3>sub main content h3 </h3>
+      <p>
+        paragraph in second section.main-content-box. Inside a div.sub-main-content.
+      </p>
+    </div>
+  </section>
+
+  <section class="main-content-box">
+    <h2>Third section.main-content-box > h2 Header</h2>
+    <div class="sub-main-content">
+      <p>
+        Paragraph inside a sub-main-content div that had no heading.
+        This is all inside the 3rd main-content-box section.
+        View the
+        <a href="{{ url_for('render_static', page_name='privacy') }}">Privacy Policy</a>
+        and <a href="{{ url_for('render_static', page_name='tos') }}">Terms of Service</a>
+        for more details. In general, data that is collected for campaigns include:
+      </p>
+      <ul>
+        <li>Media posts and associated metrics such as impressions, likes, and reach</li>
+        <li>Account Insights such as follower city and active follower count</li>
+        <li>
+          Collecting this data and storing in campaigns (collection of multiple
+          posts) alleviates the manual sending of each media posts metrics, and
+          automates reporting for large campaigns with hundreds of posts across
+          dozens of accounts. Joining the platform does not grant access to
+          other non-partnered influencers or brands. A brand or influencer will
+          only be able to view metrics and insights on their own account.
+        </li>
+      </ul>
+    </div>
+  </section>
+{% endblock content %}

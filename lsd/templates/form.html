@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block head %}
+<title>{{ action }} {{ mod|title }} Form</title>
+{% endblock head %}
+
+{% block intro %}
+<h2 class="status">
+  {{ action }} {{ mod|title }}
+</h2>
+{{ super() }}
+{% endblock intro %}
+
+{% block content %}
+<form method="POST" enctype="multipart/form-data">
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" name="name" id="name" value="{{data.name}}" class="form-control"/>
+  </div>
+  {% if mod in ['admin', 'manager'] %}
+  <div class="form-group">
+    <label for="email">Email Address</label>
+    <input type="email" name="email" id="email" value="{{data.email}}" class="form-control"/>
+  </div>
+  <div class="form-group">
+    <label for="password">New Password</label>
+    <input type="password" name="password" id="password" class="form-control"/>
+    <label for="password-confirm">Confirm New Password</label>
+    <input type="password" name="password-confirm" id="password-confirm" class="form-control" />
+  </div>
+  {% endif %}
+  {% if data.facebook_id %}
+  <p>Facebook ID is known</p>
+  {% endif %}
+  {% if mod in ['influencer', 'brand'] %}
+  <div class="form-group">
+      <label for="instagram_id">Instagram Id</label>
+      <input type="text" name="instagram_id" id="instagram_id" value="{{data.instagram_id}}" class="form-control"/>
+    </div>
+  {% endif %}
+  <div class="form-group">
+      <label for="notes">Notes</label>
+      <input type="text" name="notes" id="notes" value="{{data.notes}}" class="form-control"/>
+    </div>
+  <button type="submit" class="btn btn-success">Save</button>
+</form>
+
+{% endblock content %}
