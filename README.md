@@ -7,10 +7,6 @@
 
 This package adds a number of logging features for Python Flask applications on the Google Cloud Platform (GCP). It expands a few GCP logging features, exposes some GCP logging features that are not readily available for some deployment contexts. This is most notable for projects using Google App Engine (GAE) - standard environments.
 
-## Getting Started
-
-<!-- What are the steps that a user must take in order to build this app on their own machine and get it running? -->
-
 ## Architecture
 
 Designed to be deployed on Google Cloud App Engine, using:
