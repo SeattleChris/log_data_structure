@@ -1,4 +1,6 @@
 from flask import json, redirect, url_for, render_template, flash, session, current_app as app
+from pprint import pprint
+from .cloud_log import CloudLog
 # from flask import request  # abort
 # from datetime import time
 # from .cloud_log import CloudLog
@@ -26,6 +28,22 @@ def home():
         local_data = test_local()
         flash(local_data)
     return render_template('index.html', local_data=local_data)
+
+
+@app.route('/test')
+def test_route():
+    """Temporary route for testing components. """
+    app.logger.debug("========== Test Method for admin:  ==========")
+    info = {'key1': 1, 'key2': 'two', 'key3': '3rd', 'meaningful': False, 'testing': 'logging'}
+    pprint(info)
+    print("************************************************************************************")
+    print(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
+    print("************************************************************************************")
+    # pprint(app.config)
+    CloudLog.test_loggers(app, app.log_list, context='package')
+    print("--------------------------------------------------")
+
+    return redirect(url_for('admin', data=info))
 
 
 # Catchall redirect route.
