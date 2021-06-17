@@ -13,6 +13,10 @@ class LogNode:
     """Helps in constructing relationships between loggers. """
 
     def __init__(self, logger=None, name='', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
+        self.children, self._handlers, self._node_handlers = set(), set(), set()
+        self.ranges, self.cached_len, self._updated_handlers = [], 0, True
+        self._name, self._parent, self._propagate = None, None, None
+        self._logger_min, self._min, self._max = None, None, None
         self._logger = logger
         self._node_name = name
         self._node_parent = parent  # Expect a LogNode or None.
@@ -193,8 +197,16 @@ class LogNode:
             self.compute_max_min()
         return self._min
 
+    def __str__(self):
+        child_names = ', '.join(child.name for child in self.children)
+        parent_name = self.parent.name if self.parent else ''
+        return '{} P:{} C{}: {}'.format(self.name, parent_name, len(self.children), child_names)
 
-RootLogNode = LogNode(None, None, 'RootNode', False)
+    def __repr__(self):
+        return '<LogNode {}>'.format(self.__str__())
+
+
+RootLogNode = LogNode(None, 'RootNode', None, False)
 
 
 def handler_ranges(tree, handlers, log_name, name_low=0, high=MAX_LOG_LEVEL):
