@@ -1,9 +1,6 @@
-from flask import json, redirect, url_for, render_template, flash, session, current_app as app
+from flask import json, redirect, url_for, render_template, request, flash, session, current_app as app  # abort
 from pprint import pprint
 from .cloud_log import CloudLog
-# from flask import request  # abort
-# from datetime import time
-# from .cloud_log import CloudLog
 
 
 def test_local(*args, **kwargs):
@@ -58,7 +55,7 @@ def view(mod, id):
     """Display some tabular content, usually from the database. """
     info = test_local(mod=mod, id_=id)
     model, template = None, 'view.html'
-    data = request.data or request.form.to_dict(flat=True) or request.args or None
+    data = dict(request.args)
     # Model, model = mod_lookup(mod), None
     # model = model or Model.query.get(id)
     model = data or info
