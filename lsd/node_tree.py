@@ -235,20 +235,20 @@ def handler_ranges(tree, handlers, log_name, name_low=0, high=MAX_LOG_LEVEL):
     return tree
 
 
-def _walk_logger_tree(node: LogClass or LogNode, tree: dict, name: str = '', name_low: int = MIN_LOG_LEVEL, ):
-    if not node:
+def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_low: int = MIN_LOG_LEVEL, ):
+    if node is None:
         return tree
     if not isinstance(node, (LogClass, LogNode)):
         raise ValueError(f"Expected input of None, a LogNode, or a logger: {node} ")
-    if not name:
-        name = node.name
-        name_low = node.min or name_low
-    if name not in tree:
+    if node.name not in tree:
         if isinstance(node, LogClass):
             node = LogNode(node)
-        tree[name] = node
+        tree[node.name] = node
+    if not name:
+        name = node.name
+        name_low = getattr(node, 'min', getattr(node, 'level', None)) or name_low
     tree = handler_ranges(tree, node.handlers, name, name_low)
-    tree = _walk_logger_tree(node.parent, tree, name, name_low)
+    tree = get_tree(node.parent, tree, name, name_low)
     return tree
 
     # has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
