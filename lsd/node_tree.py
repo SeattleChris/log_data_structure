@@ -14,7 +14,7 @@ class LogNode:
 
     def __init__(self, logger=None, name='', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
         self.children, self._handlers, self._node_handlers = set(), set(), set()
-        self.ranges, self.cached_len, self._updated_handlers = [], 0, True
+        self.ranges, self.cached_len, self._compute_handlers = [], 0, True
         self._name, self._parent, self._propagate = None, None, None
         self._logger_min, self._min, self._max = None, None, None
         self._logger = logger
@@ -22,15 +22,15 @@ class LogNode:
         self._node_parent = parent  # Expect a LogNode or None.
         self._node_propagate = propagate
         self._node_min = min
-        self.add_handlers(handlers, on_node=True)  # Also sets self._updated_handlers = True
+        self.add_handlers(handlers, on_node=True)  # Also sets self._compute_handlers = True
 
     @property
     def handlers(self):
         """Returns _handlers combined with either retrieved _logger handlers or _node_handlers. """
-        if self.updated_handlers:
+        if self.compute_handlers:
             handlers = self._cache_handlers if self._logger else self._node_handlers
             self._handlers = handlers.union(self._handlers)
-            self._updated_handlers = False  # Manually set since setter keeps True if already True.
+            self.compute_handlers = 'reset'
         return self._handlers
 
     def add_handlers(self, handlers, on_node=False):
@@ -45,24 +45,30 @@ class LogNode:
             raise TypeError("Expected handlers to be a collection that can be cast to a Set of individual objects. ")
         handlers = initial.union(handlers)
         if initial != handlers:
-            self._updated_handlers = True
+            self._compute_handlers = True
             setattr(self, source, handlers)
         return handlers  # or return self.handlers to include computed handlers from _logger?
 
     @property
-    def updated_handlers(self):
-        """Decides to shortcut or compute handlers. Will stay True until manually set _updated_handlers = False. """
+    def compute_handlers(self):
+        """Decides to shortcut or compute handlers. Stays True until set to 'reset'. Updates handlers until 'clear'. """
         if self._logger:
             current = set(self._logger.handlers)
             previous = getattr(self, '_cache_handlers', set())
             if current != previous:
                 self._cache_handlers = current
-                self._updated_handlers = True
-        return self._updated_handlers
+                self._compute_handlers = True
+        return self._compute_handlers
 
-    @updated_handlers.setter
-    def updated_handlers(self, update):  # Once the value becomes True, it stays True using setter.
-        self._updated_handlers = self._updated_handlers or bool(update)
+    @compute_handlers.setter
+    def compute_handlers(self, update):
+        if update == 'reset':
+            self._compute_handlers = False
+        elif update == 'clear':
+            self._handlers = set()
+            self._compute_handlers = True
+        else:
+            self._compute_handlers = self._compute_handlers or bool(update)
 
     @property
     def logger_min(self):
