@@ -43,7 +43,7 @@ def create_app(config, config_overrides=dict()):
             if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
                 root_handler.addFilter(low_filter)
             else:  # Hi: name out, Lo: application out; propagate=False
-                name = app.logger.name if app.logger.name not in ('', None, app_handler.name) else 'app_low_handler'
+                name = app.logger.name  # if app.logger.name not in ('', None, app_handler.name) else 'app_low_handler'
                 low_handler = CloudLog.make_handler(name, base_level, res, log_client)
                 low_handler.addFilter(low_filter)
                 app.logger.addHandler(low_handler)
@@ -54,6 +54,12 @@ def create_app(config, config_overrides=dict()):
         app.c_log = c_log
         app.log_list = ['alert', 'c_log']  # assumes to also check for app.logger.
         logging.debug("***************************** END PRE-REQUEST ************************************")
+
+    # Setup the data model. Import routes and events.
+    with app.app_context():
+        from . import routes  # noqa: F401
+        # from . import model_db
+        # model_db.init_app(app)
 
     @app.shell_context_processor
     def expected_shell_imports():
@@ -72,16 +78,9 @@ def create_app(config, config_overrides=dict()):
             'inspect': inspect,
             }
 
-    # # Setup the data model. Import routes and events.
-    # with app.app_context():
-    #     from . import model_db
-    #     from . import routes  # noqa: F401
-    #     model_db.init_app(app)
-    #     from . import events  # noqa: F401
-
     @app.errorhandler(500)
     def server_error(e):
-        app.logger.error('================== Error Handler =====================')
+        app.logger.error('================== Server Handler =====================')
         app.logger.error(e)
         if app.config.get('DEBUG'):
             return """
