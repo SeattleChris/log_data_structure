@@ -24,7 +24,7 @@ body {
   font-size: 15px;
   line-height: 21px;
   letter-spacing: 0.5px;
-  font-family: 'Apercu-Light', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: f'Helvetica Neue', Helvetica, Arial, sans-serif;
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   box-sizing: border-box;
@@ -238,7 +238,7 @@ body > header nav .menu-btn:checked~.menu-icon:not(.steps) .navicon:after {
   font-weight: 500;
   letter-spacing: 0.1em;
   line-height: 1.6;
-  font-family: 'Apercu', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   z-index: 100;  /* Covers any interactive elements underneath when nav menu is expanded. */
 }
 
@@ -327,34 +327,6 @@ body > header nav .menu-btn:checked~.menu-icon:not(.steps) .navicon:after {
 }
 
 
-@font-face {
-  font-family: 'Apercu-Light';
-  src: url("/static/font/Apercu-Light.ttf");
-  font-weight: 400;
-  font-style: normal
-}
-
-@font-face {
-  font-family: 'Apercu-LightItalic';
-  src: url("/static/font/Apercu-LightItalic.ttf");
-  font-weight: 400;
-  font-style: italic
-}
-
-@font-face {
-  font-family: 'Apercu-Bold';
-  src: url("/static/font/Apercu-Bold.ttf");
-  font-weight: 900;
-  font-style: normal
-}
-
-@font-face {
-  font-family: 'Apercu-Medium';
-  src: url("/static/font/Apercu-Medium.ttf");
-  font-weight: 700;
-  font-style: normal
-}
-
 footer {
   text-align: center;
 }
@@ -363,7 +335,7 @@ h1 {
   font-size: 35px;
   line-height: 28px;
   letter-spacing: 2.5px;
-  font-family: 'Apercu-Bold', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   /* font-weight: 1000; */
   text-transform: uppercase;
   color: rgb(0, 0, 0);
@@ -374,7 +346,7 @@ h2 {
   font-size: 30px;
   line-height: 28px;
   letter-spacing: 2.5px;
-  font-family: 'Apercu-Bold', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   text-transform: lowercase;
   /* font-weight: 600; */
   font-style: normal;
@@ -387,7 +359,7 @@ h3 {
   font-size: 15px;
   line-height: 28px;
   letter-spacing: 2px;
-  font-family: 'Apercu-Medium', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   text-transform: uppercase;
   /* color: rgb(142, 142, 141); */
   color: rgb(71, 71, 71);
@@ -399,7 +371,7 @@ h6 {
   font-size: 14px;
   line-height: 26px;
   letter-spacing: 1.5px;
-  font-family: 'Apercu-Medium', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   /* color: rgb(57, 70, 80); */
   color: rgb(29, 35, 40);
 }
