@@ -46,6 +46,17 @@ def test_route():
     return redirect(url_for('admin', data=info))
 
 
+@app.route('/<string:mod>/<int:id>')
+def view(mod, id):
+    """Display some tabular content, usually from the database. """
+    info = {'mod': mod, 'id_': id, 'first': 1, 'second': 'two', 'third': '3rd', 'testing': 'logging'}
+    model, template = None, 'view.html'
+    # Model, model = mod_lookup(mod), None
+    # model = model or Model.query.get(id)
+    model = model or info
+    return render_template(template, mod=mod, data=model)
+
+
 # Catchall redirect route.
 @app.route('/<string:page_name>/')
 def render_static(page_name):
