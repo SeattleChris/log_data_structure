@@ -40,6 +40,80 @@ class LogNode:
             self._name = self._logger.name
         return self._name or self._node_name
 
+    @property
+    def parent(self):
+        """A LogNode for the parent logger, may create it or use RootLogNode. May set current as child of parent. """
+        if not self._parent:
+            if not self._logger:  # The self._parent stays as None. May return None, _node_parent, or RootLogNode.
+                use_root_node = self._node_parent and not self.propagate
+                return RootLogNode if use_root_node else self._node_parent
+            temp_parent = self._logger.parent or RootLogNode
+            temp_propagate = self.setup_propagate(self._logger.propagate)
+            if not self._node_parent:
+                self._node_propagate = temp_propagate
+                self._node_parent = self.setup_parent(temp_parent, temp_propagate)
+            if self._node_parent and self._node_parent.name == temp_parent.name:
+                temp_parent = self._node_parent  # Since _node_parent is a LogNode, it will not create a duplicate.
+            else:  # Correct parent and _node_parent are not the same. Modify _<value> and not _node_<value>.
+                self._propagate = temp_propagate
+            self._parent = self.setup_parent(temp_parent, temp_propagate)
+        return self._parent if self.propagate else RootLogNode
+
+    @property
+    def propagate(self):
+        """The _propagate property is a bool, or None when not computed. Return it or backup value if needed. """
+        if self._propagate is not None:
+            return self._propagate
+        return_value = self._logger.propagate if self._logger else None
+        if return_value is None:
+            self._propagate, return_value = return_value, self._node_propagate
+        else:
+            self._propagate = self._node_propagate = return_value  # TODO: Decide if _node_propagate left unchanged.
+        return return_value
+
+    @propagate.setter
+    def propagate(self, prop):
+        self._propagate = self.setup_propagate(prop)
+
+    def setup_propagate(self, prop: bool, force=False):
+        """Returns input unmodified, but raises if not a boolean. A connected logger can be changed with force. """
+        if not isinstance(prop, bool):
+            raise TypeError(f"Did not receive a boolean parameter: {prop} ")
+        if force:
+            if self._logger:
+                self._logger.propagate = prop
+                self.reset_propagate()  # Use this to compute it on next access.
+                # self._propagate = prop  # Shortcut computing the value since it should arrive to this result.
+            else:
+                raise ValueError("Can not force propagate without an attached logger. ")
+        return prop
+
+    def reset_propagate(self):
+        """By unsetting _propagate, the next access to propagate will attempt to compute it. """
+        self._propagate = None
+
+    @parent.setter
+    def parent(self, node):
+        self._node_parent = self.setup_parent(node, add_child=True)
+
+    def setup_parent(self, node, add_child=False):
+        if isinstance(node, LogClass):
+            node = LogNode(node)
+        elif node is None:
+            node = RootLogNode
+        if not isinstance(node, LogNode):
+            raise ValueError(f"Expected a LogNode, logger instance, or None for setting the parent: {node} ")
+        if add_child:
+            node.add_child(self)
+        return node
+
+    def add_child(self, node):
+        if isinstance(node, LogClass):
+            node = LogNode(node)
+        if not isinstance(node, LogNode):
+            raise ValueError(f"Excpected a LogNode or logger instance for add_child method: {node} ")
+        self.children.add(node)
+
     def add_range(self, low, high):
         """Input an inclusive low and an exclusive high (or max level). Return range count, or None if unsuccessful. """
         try:
