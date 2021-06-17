@@ -25,6 +25,46 @@ class LogNode:
         self._logger_min, self._min, self._max = None, None, None
 
     @property
+    def handlers(self):
+        """Returns _handlers combined with either retrieved _logger handlers or _node_handlers. """
+        if self.updated_handlers:
+            handlers = self._cache_handlers if self._logger else self._node_handlers
+            self._handlers = handlers.union(self._handlers)
+            self._updated_handlers = False  # Manually set since setter keeps True if already True.
+        return self._handlers
+
+    def add_handlers(self, handlers, on_node=False):
+        """Takes an iterator of handlers and adds them to those considered affecting this LogNode. """
+        source = '_node_handlers' if on_node else '_handlers'
+        initial = getattr(self, source, set())
+        if handlers is None:
+            handlers = set()
+        elif isinstance(handlers, logging.Handler):
+            handlers = [handlers]  # Put the individual one in a list.
+        if not isinstance(handlers, (list, tuple, set)):
+            raise TypeError("Expected handlers to be a collection that can be cast to a Set of individual objects. ")
+        handlers = initial.union(handlers)
+        if initial != handlers:
+            self._updated_handlers = True
+            setattr(self, source, handlers)
+        return handlers  # or return self.handlers to include computed handlers from _logger?
+
+    @property
+    def updated_handlers(self):
+        """Decides to shortcut or compute handlers. Will stay True until manually set _updated_handlers = False. """
+        if self._logger:
+            current = set(self._logger.handlers)
+            previous = getattr(self, '_cache_handlers', set())
+            if current != previous:
+                self._cache_handlers = current
+                self._updated_handlers = True
+        return self._updated_handlers
+
+    @updated_handlers.setter
+    def updated_handlers(self, update):  # Once the value becomes True, it stays True using setter.
+        self._updated_handlers = self._updated_handlers or bool(update)
+
+    @property
     def logger_min(self):
         """Sets level on first access of attached logger with non-zero level. Returns backup value if needed. """
         if not self._logger_min and self._logger:
