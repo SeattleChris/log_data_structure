@@ -23,10 +23,6 @@ class LogNode:
         self._node_propagate = propagate
         self._node_min = min
         self.add_handlers(handlers, on_node=True)  # Also sets self._updated_handlers = True
-        self.children, self._handlers = set(), set()
-        self.ranges, self.cached_len = [], 0
-        self._name, self._parent, self._propagate = None, None, None
-        self._logger_min, self._min, self._max = None, None, None
 
     @property
     def handlers(self):

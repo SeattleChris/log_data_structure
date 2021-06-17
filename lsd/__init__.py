@@ -65,6 +65,7 @@ def create_app(config, config_overrides=dict()):
     def expected_shell_imports():
         from pprint import pprint
         from .cloud_log import CloudLog, LowPassFilter, StreamClient, StreamTransport
+        from .node_tree import LogNode, RootLogNode, handler_ranges, get_tree
         import inspect
 
         app.try_trigger_before_first_request_functions()
@@ -74,6 +75,10 @@ def create_app(config, config_overrides=dict()):
             'LowPassFilter': LowPassFilter,
             'StreamClient': StreamClient,
             'StreamTransport': StreamTransport,
+            'LogNode': LogNode,
+            'RootLogNode': RootLogNode,
+            'handler_ranges': handler_ranges,
+            'get_tree': get_tree,
             'logging': logging,
             'inspect': inspect,
             }
