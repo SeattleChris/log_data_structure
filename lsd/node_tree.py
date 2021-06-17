@@ -240,11 +240,18 @@ def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_lo
         if isinstance(node, LogClass):
             node = LogNode(node)
         tree[node.name] = node
-    if not name:
+    if not name:  # node can still be a LogClass or LogNode
         name = node.name
         name_low = getattr(node, 'min', getattr(node, 'level', None)) or name_low
     tree = handler_ranges(tree, node.handlers, name, name_low)
     tree = get_tree(node.parent, tree, name, name_low)
+    return tree
+
+
+def make_tree(loggers: list):
+    tree = {}
+    for logger in loggers:
+        tree = get_tree(logger, tree)
     return tree
 
     # has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
