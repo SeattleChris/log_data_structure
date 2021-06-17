@@ -43,7 +43,7 @@ def create_app(config, config_overrides=dict()):
             if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
                 root_handler.addFilter(low_filter)
             else:  # Hi: name out, Lo: application out; propagate=False
-                name = app.logger.name if app.logger.name not in ('', None, app_handler.name) else 'app_low_handler'
+                name = app.logger.name  # if app.logger.name not in ('', None, app_handler.name) else 'app_low_handler'
                 low_handler = CloudLog.make_handler(name, base_level, res, log_client)
                 low_handler.addFilter(low_filter)
                 app.logger.addHandler(low_handler)
