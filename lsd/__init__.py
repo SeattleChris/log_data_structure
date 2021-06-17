@@ -65,10 +65,14 @@ def create_app(config, config_overrides=dict()):
     def expected_shell_imports():
         from pprint import pprint
         from .cloud_log import CloudLog, LowPassFilter, StreamClient, StreamTransport
-        from .node_tree import LogNode, RootLogNode, handler_ranges, get_tree
+        from .node_tree import LogNode, RootLogNode, handler_ranges, get_tree, make_tree
         import inspect
 
         app.try_trigger_before_first_request_functions()
+        all_loggers = [getattr(app, name, None) for name in app.log_list]
+        all_loggers = [logging.root, app.logger] + [log for log in all_loggers if log]
+        tree = make_tree(all_loggers)
+
         return {
             'pprint': pprint,
             'CloudLog': CloudLog,
@@ -79,6 +83,8 @@ def create_app(config, config_overrides=dict()):
             'RootLogNode': RootLogNode,
             'handler_ranges': handler_ranges,
             'get_tree': get_tree,
+            'make_tree': make_tree,
+            'tree': tree,
             'logging': logging,
             'inspect': inspect,
             }
