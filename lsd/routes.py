@@ -15,8 +15,11 @@ def test_local(*args, **kwargs):
         'page': 'Proof of Life',
         'text': 'Does this text get there?',
         'info_list': ['first_item', 'second_item', 'third_item'],
-        'data': json.dumps({'first': 'val_1', 'second': 'val_2'})
-    }
+        'data': json.dumps({'first': 'val_1', 'second': 'val_2'}),
+        }
+    if args:
+        local_data['_args_'] = args
+    local_data.update(kwargs)
     return local_data
 
 
@@ -34,7 +37,7 @@ def home():
 def test_route():
     """Temporary route for testing components. """
     app.logger.debug("========== Test Method for admin:  ==========")
-    info = {'key1': 1, 'key2': 'two', 'key3': '3rd', 'meaningful': False, 'testing': 'logging'}
+    info = test_local(meaningful=False, testing='logging')
     pprint(info)
     print("************************************************************************************")
     print(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
@@ -42,18 +45,18 @@ def test_route():
     # pprint(app.config)
     CloudLog.test_loggers(app, app.log_list, context='package')
     print("--------------------------------------------------")
-
-    return redirect(url_for('admin', data=info))
+    return redirect(url_for('view', mod='log', id=1, data=info))
 
 
 @app.route('/<string:mod>/<int:id>')
 def view(mod, id):
     """Display some tabular content, usually from the database. """
-    info = {'mod': mod, 'id_': id, 'first': 1, 'second': 'two', 'third': '3rd', 'testing': 'logging'}
+    info = test_local(mod=mod, id_=id)
     model, template = None, 'view.html'
+    data = request.data or request.form.to_dict(flat=True) or request.args or None
     # Model, model = mod_lookup(mod), None
     # model = model or Model.query.get(id)
-    model = model or info
+    model = data or info
     return render_template(template, mod=mod, data=model)
 
 
