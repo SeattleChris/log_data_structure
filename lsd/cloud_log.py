@@ -15,10 +15,12 @@ DEFAULT_FORMAT = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 
 class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
+    DEFAULT_LEVEL = logging.WARNING
 
     def __init__(self, name: str, level: int) -> None:
         super().__init__(name=name)
-        self.below_level = level
+        self.below_level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
+        assert self.below_level > 0
 
     def filter(self, record):
         if record.name == self.name and record.levelno > self.below_level - 1:
@@ -278,10 +280,12 @@ class CloudLog(logging.getLoggerClass()):
         return self._project
 
     @classmethod
-    def normalize_level(cls, level=None):
+    def normalize_level(cls, level=None, default=None):
         """Returns the level value, based on the input string or integer if provided, or by using the default value. """
-        if level is None:
-            level = getattr(cls, 'DEFAULT_LEVEL', logging.WARNING)
+        if level is None and default is None:
+            default = cls.DEFAULT_LEVEL
+            default = default if default is not None else logging.WARNING
+        level = level or default
         name_to_level = logging._nameToLevel
         if isinstance(level, str):
             level = name_to_level.get(level.upper(), None)
