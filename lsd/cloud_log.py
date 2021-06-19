@@ -363,12 +363,18 @@ class CloudLog(logging.getLoggerClass()):
             }
 
     @classmethod
-    def make_resource(cls, config, **kwargs):
-        """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
+    def config_as_dict(cls, config):
+        """Takes a Config object or a dict. If input is None, returns os.environ. Otherwise, returns a dict. """
         if config and not isinstance(config, dict):
             config = getattr(config, '__dict__', None)
         if not config:
             config = environ
+        return config
+
+    @classmethod
+    def make_resource(cls, config, **kwargs):
+        """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
+        config = cls.config_as_dict(config)
         added_labels = cls.get_environment_labels(config)
         for key, val in added_labels.items():
             kwargs.setdefault(key, val)
