@@ -148,7 +148,15 @@ class LogNode:
 
     def setup_parent(self, node, add_child=False):
         if isinstance(node, LogClass):
-            node = LogNode(node)
+            found = None
+            for ea in all_nodes:
+                if ea.name == node.name:
+                    print("Found Node")
+                    found = ea
+            node = found or node
+            if not found:
+                print(f"***** MAKE PARENT: {node.name} ! *****")
+                node = LogNode(node)
         elif node is None:
             node = RootLogNode
         if not isinstance(node, LogNode):
