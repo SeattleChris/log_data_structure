@@ -1,6 +1,6 @@
 from collections import defaultdict
 import logging
-# from sys import stdout, stderr
+from sys import stderr, stdout
 from flask import json
 from google.cloud import logging as cloud_logging
 from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
@@ -10,7 +10,23 @@ from google.cloud.logging import Resource
 from os import environ
 from datetime import datetime as dt
 
-DEFAULT_FORMAT = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+MAX_LOG_LEVEL = logging.CRITICAL
+
+
+def _clean_level(level):
+    """Used if logging._checkLevel is not available. """
+    name_to_level = logging._nameToLevel
+    if isinstance(level, str):
+        level = name_to_level.get(level.upper(), None)
+        if level is None:
+            raise ValueError("The level string was not a recognized value. ")
+    elif isinstance(level, int):
+        if level not in name_to_level.values():
+            raise ValueError("The level integer was not a recognized value. ")
+    else:
+        raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+    return level
 
 
 class LowPassFilter(logging.Filter):
@@ -19,11 +35,31 @@ class LowPassFilter(logging.Filter):
 
     def __init__(self, name: str, level: int) -> None:
         super().__init__(name=name)
+        self._allowed_high = set()
         self.below_level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
         assert self.below_level > 0
 
+    def add_allowed_high(self, name):
+        rv = None
+        if isinstance(name, (list, tuple)):
+            rv = [self.add_allowed_high(ea) for ea in name]
+            name = None
+        elif not isinstance(name, str):
+            try:
+                name = getattr(name, 'name', None)
+                assert isinstance(name, str)
+            except (AssertionError, Exception):
+                name = None
+        if name and isinstance(name, str):
+            self._allowed_high.add(name)
+            rv = name
+        return rv
+
     def filter(self, record):
-        if record.name == self.name and record.levelno > self.below_level - 1:
+        if record.name in self._allowed_high:
+            return True
+        is_logged = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
+        if is_logged and record.levelno > self.below_level - 1:
             return False
         # record._severity = record.levelname
         return True
@@ -236,9 +272,10 @@ class CloudLog(logging.getLoggerClass()):
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
         name = self.normalize_logger_name(name)
-        super().__init__(name)
         level = self.normalize_level(level)
-        self.setLevel(level)
+        # self.ensure_logger_class()
+        super().__init__(name, level=level)
+        # self.py_logger = logging.getLogger(name)
         if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
             resource = self.make_resource(resource, **kwargs)
         self.resource = resource._to_dict()
@@ -255,10 +292,42 @@ class CloudLog(logging.getLoggerClass()):
             parent = None
         elif parent and isinstance(parent, str):
             parent = logging.getLogger(parent.lower())
+        elif parent == logging.root:
+            pass
         elif parent and not isinstance(parent, logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
-        if parent:
-            self.parent = parent
+        self.parent = parent
+
+    @classmethod
+    def ensure_logger_class(cls):
+        """If not already done, sets the CloudLog class as the with setLoggerClass function. """
+        old_class = logging.getLoggerClass()
+        if old_class is CloudLog:
+            return True
+        cls._old_class = old_class
+        try:
+            logging.setLoggerClass(cls)
+            return True
+        except Exception as e:
+            logging.exception(e)
+            return False
+
+
+    # def hasHandlers(self, level=0):
+    #     if level == 0 or level < self.level:
+    #         return super().hasHandlers()
+    #     c = self
+    #     rv = False
+    #     while c:
+    #         if c.handlers:
+    #             rv = True
+    #             break
+    #         if not c.propagate:
+    #             break
+    #         else:
+    #             c = c.parent
+    #     return rv
+
 
     @property
     def project(self):
@@ -285,17 +354,9 @@ class CloudLog(logging.getLoggerClass()):
         if level is None and default is None:
             default = cls.DEFAULT_LEVEL
             default = default if default is not None else logging.WARNING
-        level = level or default
-        name_to_level = logging._nameToLevel
-        if isinstance(level, str):
-            level = name_to_level.get(level.upper(), None)
-            if level is None:
-                raise ValueError("The level string was not a recognized value. ")
-        elif isinstance(level, int):
-            if level not in name_to_level.values():
-                raise ValueError("The level integer was not a recognized value. ")
-        else:
-            raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+        level = level if level is not None else default
+        clean_level = getattr(logging, '_checkLevel', _clean_level)
+        level = clean_level(level)
         return level
 
     @classmethod
@@ -363,12 +424,18 @@ class CloudLog(logging.getLoggerClass()):
             }
 
     @classmethod
-    def make_resource(cls, config, **kwargs):
-        """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
+    def config_as_dict(cls, config):
+        """Takes a Config object or a dict. If input is None, returns os.environ. Otherwise, returns a dict. """
         if config and not isinstance(config, dict):
             config = getattr(config, '__dict__', None)
         if not config:
             config = environ
+        return config
+
+    @classmethod
+    def make_resource(cls, config, **kwargs):
+        """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
+        config = cls.config_as_dict(config)
         added_labels = cls.get_environment_labels(config)
         for key, val in added_labels.items():
             kwargs.setdefault(key, val)
