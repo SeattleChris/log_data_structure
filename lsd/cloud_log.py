@@ -257,9 +257,10 @@ class CloudLog(logging.getLoggerClass()):
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
         name = self.normalize_logger_name(name)
-        super().__init__(name)
         level = self.normalize_level(level)
-        self.setLevel(level)
+        # self.ensure_logger_class()
+        super().__init__(name, level=level)
+        # self.py_logger = logging.getLogger(name)
         if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
             resource = self.make_resource(resource, **kwargs)
         self.resource = resource._to_dict()
