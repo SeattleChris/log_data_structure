@@ -12,6 +12,7 @@ from datetime import datetime as dt
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
+NON_EXISTING_LOGGER_NAME = 'name-that-does-not-match-any-logger'
 
 
 def _clean_level(level):
@@ -301,6 +302,25 @@ class CloudLog(logging.Logger):
         self.parent = parent
 
     @classmethod
+    def make_high_report(cls):
+        name_filter = LowPassFilter(NON_EXISTING_LOGGER_NAME, 1)
+        high_report = logging.StreamHandler(stdout)
+        high_report.addFilter(name_filter)
+        high_report.setLevel(cls.DEFAULT_HIGH_LEVEL)
+        high_report.set_name('high_report')
+
+    @classmethod
+    def add_high_report(cls, name):
+        """Any log records with a matching name will be logged by the high_report handler on root. """
+        high_report = logging._handlers.get('high_report', None)
+        if not high_report:
+            high_report = cls.make_high_report()
+            logging.root.addHandler(high_report)
+        name_filter = high_report.filters[0]
+        name_filter.add_allowed_high(name)
+
+
+    @classmethod
     def basicConfig(cls, config=None, **kwargs):
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
         cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
@@ -330,6 +350,7 @@ class CloudLog(logging.Logger):
             log_client = logging
         app_handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client)
 
+        high_report = cls.make_high_report()
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
@@ -337,8 +358,10 @@ class CloudLog(logging.Logger):
         high_handler = logging.StreamHandler(stderr)
         high_handler.setLevel(high_level)
         high_handler.set_name('root_high')
-        kwargs['handlers'] = [low_handler, high_handler]
+        kwargs['handlers'] = [low_handler, high_handler, high_report]
         kwargs['level'] = base_level
+        if log_client is logging:
+            cls.add_high_report(name)
         try:
             logging.basicConfig(**kwargs)
             root = logging.root
