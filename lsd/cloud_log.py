@@ -281,10 +281,15 @@ class CloudLog(logging.Logger):
         # self.ensure_logger_class()
         super().__init__(name, level=level)
         # self.py_logger = logging.getLogger(name)
+        if resource is None:
+            resource = getattr(logging.root, '_config_resource', None)
+            resource = Resource._from_dict(resource)
         if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
             resource = self.make_resource(resource, **kwargs)
-        self.labels = getattr(resource, 'labels', self.get_environment_labels(environ))
+        self.labels = getattr(resource, 'labels', self.get_environment_labels())
         self.resource = resource._to_dict()
+        if client is None:
+            client = getattr(logging.root, '_config_log_client', None)
         if client is logging:
             self.propagate = False
         else:    # client may be None, a cloud_logging.Client, a credential object or path.
