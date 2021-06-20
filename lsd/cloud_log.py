@@ -348,7 +348,10 @@ class CloudLog(logging.Logger):
         if high_level < base_level:
             raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
         name = kwargs.pop('name', __name__)
+        default_handle_name = cls.APP_HANDLER_NAME if name == __name__ else cls.DEFAULT_HANDLER_NAME
+        handler_name = kwargs.pop('handler_name', default_handle_name)
         name = cls.normalize_logger_name(name)  # TODO: Actually use name.
+        handler_name = cls.normalize_handler_name(handler_name)
         labels = kwargs.pop('labels', None) or {}
         resource = kwargs.pop('resource', None) or {}
         if not isinstance(resource, Resource):
@@ -363,7 +366,7 @@ class CloudLog(logging.Logger):
         except Exception as e:
             logging.exception(e)
             log_client = logging
-        app_handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client)
+        app_handler = None
         # low_app_filter = LowPassFilter(name, high_level)  # Do not log at this level or higher.
         # if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
         #     root_handler = logging.root.handlers[0]
@@ -385,7 +388,9 @@ class CloudLog(logging.Logger):
         kwargs['handlers'] = [low_handler, high_handler, high_report]
         kwargs['level'] = base_level
         if log_client is logging:
-            cls.add_high_report(name)
+            app_handler = cls.make_handler(handler_name, high_level, resource, log_client)
+        else:
+            cls.add_high_report([name, handler_name])
         try:
             logging.basicConfig(**kwargs)
             root = logging.root
