@@ -1,6 +1,6 @@
 from collections import defaultdict
 import logging
-# from sys import stdout, stderr
+from sys import stderr, stdout
 from flask import json
 from google.cloud import logging as cloud_logging
 from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
@@ -10,7 +10,8 @@ from google.cloud.logging import Resource
 from os import environ
 from datetime import datetime as dt
 
-DEFAULT_FORMAT = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+MAX_LOG_LEVEL = logging.CRITICAL
 
 
 class LowPassFilter(logging.Filter):
