@@ -6,9 +6,10 @@ from .cloud_log import CloudLog, LowPassFilter, setup_cloud_logging  # , StructH
 def create_app(config, config_overrides=dict()):
     debug = config_overrides.get('DEBUG', getattr(config, 'DEBUG', None))
     testing = config_overrides.get('TESTING', getattr(config, 'TESTING', None))
-    if not testing:
-        base_log_level = logging.DEBUG if debug else logging.INFO
-        logging.basicConfig(level=base_log_level)  # Ensures a StreamHandler to stderr is attached.
+    # if not testing:
+        # base_log_level = logging.DEBUG if debug else logging.INFO
+        # logging.setLoggerClass(CloudLog)  # Causes app.logger to be a CloudLog instance.
+    CloudLog.basicConfig(config, debug=debug, testing=testing)  # Ensures a StreamHandler to stderr is attached.
     app = Flask(__name__)
     app.config.from_object(config)
     if config_overrides:
