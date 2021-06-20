@@ -309,6 +309,7 @@ class CloudLog(logging.Logger):
         high_report.addFilter(name_filter)
         high_report.setLevel(cls.DEFAULT_HIGH_LEVEL)
         high_report.set_name('high_report')
+        return high_report
 
     @classmethod
     def add_high_report(cls, name):
@@ -317,9 +318,14 @@ class CloudLog(logging.Logger):
         if not high_report:
             high_report = cls.make_high_report()
             logging.root.addHandler(high_report)
-        name_filter = high_report.filters[0]
-        name_filter.add_allowed_high(name)
-
+        try:
+            name_filter = high_report.filters[0]
+            assert name_filter.name == NON_EXISTING_LOGGER_NAME
+        except (AssertionError, IndexError) as e:
+            print(e)  # TODO: Update logging.
+            raise KeyError("Unable to find the name filter on the high_report handler. ")
+        rv = name_filter.add_allowed_high(name)
+        return bool(rv)
 
     @classmethod
     def basicConfig(cls, config=None, **kwargs):
