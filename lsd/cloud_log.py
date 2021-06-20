@@ -41,6 +41,7 @@ class LowPassFilter(logging.Filter):
         assert self.below_level > 0
 
     def add_allowed_high(self, name):
+        """Any log records with these names are not affected by the low filter. They will always pass through. """
         rv = None
         if isinstance(name, (list, tuple)):
             rv = [self.add_allowed_high(ea) for ea in name]
@@ -349,6 +350,15 @@ class CloudLog(logging.Logger):
             logging.exception(e)
             log_client = logging
         app_handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client)
+        # low_app_filter = LowPassFilter(name, high_level)  # Do not log at this level or higher.
+        # if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
+        #     root_handler = logging.root.handlers[0]
+        #     root_handler.addFilter(low_app_filter)
+        # else:  # Hi: name out, Lo: application out; propagate=False
+        #     low_app_handler = CloudLog.make_handler(name, base_level, resource, log_client)
+        #     low_app_handler.addFilter(low_app_filter)
+        #     # app.logger.addHandler(low_handler)
+        #     # app.logger.propagate = False
 
         high_report = cls.make_high_report()
         low_handler = logging.StreamHandler(stdout)
