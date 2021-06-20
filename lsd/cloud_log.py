@@ -283,6 +283,37 @@ class CloudLog(logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
         self.parent = parent
 
+    @classmethod
+    def ensure_logger_class(cls):
+        """If not already done, sets the CloudLog class as the with setLoggerClass function. """
+        old_class = logging.getLoggerClass()
+        if old_class is CloudLog:
+            return True
+        cls._old_class = old_class
+        try:
+            logging.setLoggerClass(cls)
+            return True
+        except Exception as e:
+            logging.exception(e)
+            return False
+
+
+    # def hasHandlers(self, level=0):
+    #     if level == 0 or level < self.level:
+    #         return super().hasHandlers()
+    #     c = self
+    #     rv = False
+    #     while c:
+    #         if c.handlers:
+    #             rv = True
+    #             break
+    #         if not c.propagate:
+    #             break
+    #         else:
+    #             c = c.parent
+    #     return rv
+
+
     @property
     def project(self):
         """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
