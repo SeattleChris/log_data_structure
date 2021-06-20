@@ -19,11 +19,31 @@ class LowPassFilter(logging.Filter):
 
     def __init__(self, name: str, level: int) -> None:
         super().__init__(name=name)
+        self._allowed_high = set()
         self.below_level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
         assert self.below_level > 0
 
+    def add_allowed_high(self, name):
+        rv = None
+        if isinstance(name, (list, tuple)):
+            rv = [self.add_allowed_high(ea) for ea in name]
+            name = None
+        elif not isinstance(name, str):
+            try:
+                name = getattr(name, 'name', None)
+                assert isinstance(name, str)
+            except (AssertionError, Exception):
+                name = None
+        if name and isinstance(name, str):
+            self._allowed_high.add(name)
+            rv = name
+        return rv
+
     def filter(self, record):
-        if record.name == self.name and record.levelno > self.below_level - 1:
+        if record.name in self._allowed_high:
+            return True
+        is_logged = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
+        if is_logged and record.levelno > self.below_level - 1:
             return False
         # record._severity = record.levelname
         return True
