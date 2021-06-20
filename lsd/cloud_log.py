@@ -12,6 +12,7 @@ from datetime import datetime as dt
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
+NON_EXISTING_LOGGER_NAME = 'name-that-does-not-match-any-logger'
 
 
 def _clean_level(level):
@@ -40,6 +41,7 @@ class LowPassFilter(logging.Filter):
         assert self.below_level > 0
 
     def add_allowed_high(self, name):
+        """Any log records with these names are not affected by the low filter. They will always pass through. """
         rv = None
         if isinstance(name, (list, tuple)):
             rv = [self.add_allowed_high(ea) for ea in name]
@@ -194,11 +196,11 @@ class CloudParamHandler(CloudLoggingHandler):
         labels = {**http_labels, **handler_labels, **record_labels}
         record._labels = labels
         record._http_request = None
-        print(f"------------------- Prepared: {record.name} ------------------------")
-        print(f"http_request: {record._http_request} ")
-        print(f"Labels: {record._labels} ")
-        print("---------------------------------------------------------")
-        if isinstance(self.client, StreamClient) and resource:
+        # print(f"------------------- Prepared: {record.name} ------------------------")
+        # print(f"http_request: {record._http_request} ")
+        # print(f"Labels: {record._labels} ")
+        # print("---------------------------------------------------------")
+        if isinstance(self.client, StreamClient) and isinstance(resource, Resource):
             record._resource = resource._to_dict()
         return record
 
@@ -216,13 +218,15 @@ class CloudParamHandler(CloudLoggingHandler):
         super().emit(record)
 
 
-class CloudLog(logging.getLoggerClass()):
+class CloudLog(logging.Logger):
     """Extended python Logger class that attaches a google cloud log handler. """
     APP_LOGGER_NAME = 'application'
     APP_HANDLER_NAME = 'app'
     DEFAULT_LOGGER_NAME = None
     DEFAULT_HANDLER_NAME = None
+    DEBUG_LOG_LEVEL = logging.DEBUG
     DEFAULT_LEVEL = logging.INFO
+    DEFAULT_HIGH_LEVEL = logging.WARNING
     DEFAULT_RESOURCE_TYPE = 'gae_app'  # 'logging_log', 'global', or any key from RESOURCE_REQUIRED_FIELDS
     LOG_SCOPES = (
         'https://www.googleapis.com/auth/logging.read',
@@ -297,6 +301,96 @@ class CloudLog(logging.getLoggerClass()):
         elif parent and not isinstance(parent, logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
         self.parent = parent
+
+    @classmethod
+    def make_high_report(cls):
+        name_filter = LowPassFilter(NON_EXISTING_LOGGER_NAME, 1)
+        high_report = logging.StreamHandler(stdout)
+        high_report.addFilter(name_filter)
+        high_report.setLevel(cls.DEFAULT_HIGH_LEVEL)
+        high_report.set_name('high_report')
+
+    @classmethod
+    def add_high_report(cls, name):
+        """Any log records with a matching name will be logged by the high_report handler on root. """
+        high_report = logging._handlers.get('high_report', None)
+        if not high_report:
+            high_report = cls.make_high_report()
+            logging.root.addHandler(high_report)
+        name_filter = high_report.filters[0]
+        name_filter.add_allowed_high(name)
+
+
+    @classmethod
+    def basicConfig(cls, config=None, **kwargs):
+        logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
+        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+        config = cls.config_as_dict(config)
+        debug = kwargs.pop('debug', None) or config.get('DEBUG', None)
+        testing = kwargs.pop('testing', None) or config.get('TESTING', None)
+        if testing:
+            return False
+        base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
+        base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
+        high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
+        if high_level < base_level:
+            raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
+        name = kwargs.pop('name', __name__)
+        name = cls.normalize_logger_name(name)  # TODO: Actually use name.
+        labels = kwargs.pop('labels', None) or {}
+        resource = kwargs.pop('resource', None) or {}
+        if not isinstance(resource, Resource):
+            resource.update(labels)
+            resource = cls.make_resource(config, **resource)
+        labels = getattr(resource, 'labels', cls.get_environment_labels(environ))
+        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
+        try:
+            log_client = CloudLog.make_client(cred_path, **client_kwargs)
+        except Exception as e:
+            logging.exception(e)
+            log_client = logging
+        app_handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client)
+        # low_app_filter = LowPassFilter(name, high_level)  # Do not log at this level or higher.
+        # if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
+        #     root_handler = logging.root.handlers[0]
+        #     root_handler.addFilter(low_app_filter)
+        # else:  # Hi: name out, Lo: application out; propagate=False
+        #     low_app_handler = CloudLog.make_handler(name, base_level, resource, log_client)
+        #     low_app_handler.addFilter(low_app_filter)
+        #     # app.logger.addHandler(low_handler)
+        #     # app.logger.propagate = False
+
+        high_report = cls.make_high_report()
+        low_handler = logging.StreamHandler(stdout)
+        low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
+        low_handler.addFilter(low_filter)
+        low_handler.set_name('root_low')
+        high_handler = logging.StreamHandler(stderr)
+        high_handler.setLevel(high_level)
+        high_handler.set_name('root_high')
+        kwargs['handlers'] = [low_handler, high_handler, high_report]
+        kwargs['level'] = base_level
+        if log_client is logging:
+            cls.add_high_report(name)
+        try:
+            logging.basicConfig(**kwargs)
+            root = logging.root
+            root._config_resource = resource._to_dict()
+            root._config_lables = labels
+            root._config_log_client = log_client
+            root._config_name = name
+            root._config_base_level = base_level
+            root._config_high_level = high_level
+            root._config_app_handler = app_handler
+        except Exception as e:
+            print("********************** Unable to do basicConfig **********************")
+            logging.exception(e)
+            return False
+        return None
+
+    @classmethod
+    def getLogger(cls, name):
+        return logging.getLogger(name)
 
     @classmethod
     def ensure_logger_class(cls):
@@ -640,3 +734,21 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
         extra = [extra]
     cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra]
     return (log_client, *cloud_logs)
+
+
+def logger_coverage(logger):
+    """Determine what logging levels are covered for a given (all?) logger. """
+    construct_level = logger.level
+    delayed = []
+    for handler in logger.handlers:
+        has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
+        if has_external_log:
+            delayed.append(handler)
+            continue
+        low = max((construct_level, handler.level))
+        high = MAX_LOG_LEVEL
+        ranges = []
+        for filter in handler.filters:
+            if isinstance(filter, LowPassFilter):
+                pass
+        # client = getattr(handler, 'client', None)

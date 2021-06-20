@@ -3,16 +3,18 @@ import logging
 from google.cloud import logging as cloud_logging
 from .cloud_log import LowPassFilter
 from pprint import pprint
+from datetime import time, datetime as dt
 
 LogClass = logging.getLoggerClass()
 MAX_LOG_LEVEL = logging.CRITICAL
 MIN_LOG_LEVEL = logging.NOTSET
+all_nodes = []
 
 
 class LogNode:
     """Helps in constructing relationships between loggers. """
 
-    def __init__(self, logger=None, name='', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
+    def __init__(self, logger=None, name='NA', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
         self.children, self._handlers, self._node_handlers = set(), set(), set()
         self.ranges, self.cached_len, self._compute_handlers = [], 0, True
         self._name, self._parent, self._propagate = None, None, None
@@ -23,6 +25,8 @@ class LogNode:
         self._node_propagate = propagate
         self._node_min = min
         self.add_handlers(handlers, on_node=True)  # Also sets self._compute_handlers = True
+        self.created = dt.now().isoformat()
+        all_nodes.append(self)
 
     @property
     def handlers(self):
@@ -144,7 +148,15 @@ class LogNode:
 
     def setup_parent(self, node, add_child=False):
         if isinstance(node, LogClass):
-            node = LogNode(node)
+            found = None
+            for ea in all_nodes:
+                if ea.name == node.name:
+                    print("Found Node")
+                    found = ea
+            node = found or node
+            if not found:
+                print(f"***** MAKE PARENT: {node.name} ! *****")
+                node = LogNode(node)
         elif node is None:
             node = RootLogNode
         if not isinstance(node, LogNode):
@@ -179,8 +191,8 @@ class LogNode:
         if self.cached_len == 0:
             self._min, self._max = None, None
             return None
-        min_vals = (range[0] for range in self.ranges)
-        max_vals = (range[1] for range in self.ranges)
+        min_vals = (r[0] for r in self.ranges)
+        max_vals = (r[1] for r in self.ranges)
         self._min = max((self.logger_min, min(min_vals)))
         self._max = min(MAX_LOG_LEVEL, max(max_vals))
         return self.cached_len
@@ -246,6 +258,11 @@ def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_lo
         if isinstance(node, LogClass):
             node = LogNode(node)
         tree[node.name] = node
+    else:
+        logger, node = node, tree.get(node.name)
+        if node._logger is None and isinstance(logger, LogClass):
+            node._logger = logger
+            node.compute_handlers = 'clear'
     if not name:  # node can still be a LogClass or LogNode
         name = node.name
         name_low = getattr(node, 'min', getattr(node, 'level', None)) or name_low
