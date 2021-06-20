@@ -3,10 +3,12 @@ import logging
 from google.cloud import logging as cloud_logging
 from .cloud_log import LowPassFilter
 from pprint import pprint
+from datetime import time, datetime as dt
 
 LogClass = logging.getLoggerClass()
 MAX_LOG_LEVEL = logging.CRITICAL
 MIN_LOG_LEVEL = logging.NOTSET
+all_nodes = []
 
 
 class LogNode:
@@ -23,6 +25,8 @@ class LogNode:
         self._node_propagate = propagate
         self._node_min = min
         self.add_handlers(handlers, on_node=True)  # Also sets self._compute_handlers = True
+        self.created = dt.now().isoformat()
+        all_nodes.append(self)
 
     @property
     def handlers(self):
