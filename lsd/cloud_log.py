@@ -342,7 +342,7 @@ class CloudLog(logging.Logger):
         if not isinstance(resource, Resource):
             resource.update(labels)
             resource = cls.make_resource(config, **resource)
-        labels = getattr(resource, 'labels', cls.get_environment_labels(environ))
+        labels = getattr(resource, 'labels', cls.get_environment_labels())
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
         try:
             log_client = CloudLog.make_client(cred_path, **client_kwargs)
@@ -563,6 +563,9 @@ class CloudLog(logging.Logger):
         stream = kwargs.pop('stream', None)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         cred_or_path = kwargs.pop('cred_or_path', client)
+        if res is None:
+            res = getattr(logging.root, '_config_resource', None)
+            res = Resource._from_dict(res) if res else None
         if not isinstance(res, Resource):  # res may be None, a Config obj, or a dict.
             res = cls.make_resource(res, **kwargs)
         labels = getattr(res, 'labels', None)
@@ -575,6 +578,8 @@ class CloudLog(logging.Logger):
             handler_kwargs['resource'] = res
         if stream:
             handler_kwargs['stream'] = stream
+        if client is None:
+            client = getattr(logging.root, '_config_log_client', None)
         if client is not logging:
             client = cls.make_client(cred_or_path, **labels)  # cred_or_path is likely same as client.
         handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler if client, else StreamHandler.
