@@ -216,13 +216,15 @@ class CloudParamHandler(CloudLoggingHandler):
         super().emit(record)
 
 
-class CloudLog(logging.getLoggerClass()):
+class CloudLog(logging.Logger):
     """Extended python Logger class that attaches a google cloud log handler. """
     APP_LOGGER_NAME = 'application'
     APP_HANDLER_NAME = 'app'
     DEFAULT_LOGGER_NAME = None
     DEFAULT_HANDLER_NAME = None
+    DEBUG_LOG_LEVEL = logging.DEBUG
     DEFAULT_LEVEL = logging.INFO
+    DEFAULT_HIGH_LEVEL = logging.WARNING
     DEFAULT_RESOURCE_TYPE = 'gae_app'  # 'logging_log', 'global', or any key from RESOURCE_REQUIRED_FIELDS
     LOG_SCOPES = (
         'https://www.googleapis.com/auth/logging.read',
