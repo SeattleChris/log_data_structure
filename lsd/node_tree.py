@@ -14,7 +14,7 @@ all_nodes = []
 class LogNode:
     """Helps in constructing relationships between loggers. """
 
-    def __init__(self, logger=None, name='', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
+    def __init__(self, logger=None, name='NA', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
         self.children, self._handlers, self._node_handlers = set(), set(), set()
         self.ranges, self.cached_len, self._compute_handlers = [], 0, True
         self._name, self._parent, self._propagate = None, None, None
@@ -191,8 +191,8 @@ class LogNode:
         if self.cached_len == 0:
             self._min, self._max = None, None
             return None
-        min_vals = (range[0] for range in self.ranges)
-        max_vals = (range[1] for range in self.ranges)
+        min_vals = (r[0] for r in self.ranges)
+        max_vals = (r[1] for r in self.ranges)
         self._min = max((self.logger_min, min(min_vals)))
         self._max = min(MAX_LOG_LEVEL, max(max_vals))
         return self.cached_len
