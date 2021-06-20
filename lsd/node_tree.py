@@ -13,16 +13,16 @@ class LogNode:
     """Helps in constructing relationships between loggers. """
 
     def __init__(self, logger=None, name='', parent=None, propagate=True, min=MIN_LOG_LEVEL, handlers=None, ):
+        self.children, self._handlers, self._node_handlers = set(), set(), set()
+        self.ranges, self.cached_len, self._updated_handlers = [], 0, True
+        self._name, self._parent, self._propagate = None, None, None
+        self._logger_min, self._min, self._max = None, None, None
         self._logger = logger
         self._node_name = name
         self._node_parent = parent  # Expect a LogNode or None.
         self._node_propagate = propagate
         self._node_min = min
         self.add_handlers(handlers, on_node=True)  # Also sets self._updated_handlers = True
-        self.children, self._handlers = set(), set()
-        self.ranges, self.cached_len = [], 0
-        self._name, self._parent, self._propagate = None, None, None
-        self._logger_min, self._min, self._max = None, None, None
 
     @property
     def handlers(self):
@@ -193,8 +193,16 @@ class LogNode:
             self.compute_max_min()
         return self._min
 
+    def __str__(self):
+        child_names = ', '.join(child.name for child in self.children)
+        parent_name = self.parent.name if self.parent else ''
+        return '{} P:{} C{}: {}'.format(self.name, parent_name, len(self.children), child_names)
 
-RootLogNode = LogNode(None, None, 'RootNode', False)
+    def __repr__(self):
+        return '<LogNode {}>'.format(self.__str__())
+
+
+RootLogNode = LogNode(None, 'RootNode', None, False)
 
 
 def handler_ranges(tree, handlers, log_name, name_low=0, high=MAX_LOG_LEVEL):
@@ -223,20 +231,27 @@ def handler_ranges(tree, handlers, log_name, name_low=0, high=MAX_LOG_LEVEL):
     return tree
 
 
-def _walk_logger_tree(node: LogClass or LogNode, tree: dict, name: str = '', name_low: int = MIN_LOG_LEVEL, ):
-    if not node:
+def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_low: int = MIN_LOG_LEVEL, ):
+    if node is None:
         return tree
     if not isinstance(node, (LogClass, LogNode)):
         raise ValueError(f"Expected input of None, a LogNode, or a logger: {node} ")
-    if not name:
-        name = node.name
-        name_low = node.min or name_low
-    if name not in tree:
+    if node.name not in tree:
         if isinstance(node, LogClass):
             node = LogNode(node)
-        tree[name] = node
+        tree[node.name] = node
+    if not name:  # node can still be a LogClass or LogNode
+        name = node.name
+        name_low = getattr(node, 'min', getattr(node, 'level', None)) or name_low
     tree = handler_ranges(tree, node.handlers, name, name_low)
-    tree = _walk_logger_tree(node.parent, tree, name, name_low)
+    tree = get_tree(node.parent, tree, name, name_low)
+    return tree
+
+
+def make_tree(loggers: list):
+    tree = {}
+    for logger in loggers:
+        tree = get_tree(logger, tree)
     return tree
 
     # has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
