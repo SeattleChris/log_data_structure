@@ -314,6 +314,22 @@ class CloudLog(logging.Logger):
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
         if high_level < base_level:
             raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
+        name = kwargs.pop('name', __name__)
+        name = cls.normalize_logger_name(name)  # TODO: Actually use name.
+        labels = kwargs.pop('labels', None) or {}
+        resource = kwargs.pop('resource', None) or {}
+        if not isinstance(resource, Resource):
+            resource.update(labels)
+            resource = cls.make_resource(config, **resource)
+        labels = getattr(resource, 'labels', cls.get_environment_labels(environ))
+        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
+        try:
+            log_client = CloudLog.make_client(cred_path, **client_kwargs)
+        except Exception as e:
+            logging.exception(e)
+            log_client = logging
+        app_handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client)
+
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
@@ -325,6 +341,14 @@ class CloudLog(logging.Logger):
         kwargs['level'] = base_level
         try:
             logging.basicConfig(**kwargs)
+            root = logging.root
+            root._config_resource = resource._to_dict()
+            root._config_lables = labels
+            root._config_log_client = log_client
+            root._config_name = name
+            root._config_base_level = base_level
+            root._config_high_level = high_level
+            root._config_app_handler = app_handler
         except Exception as e:
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
