@@ -194,11 +194,11 @@ class CloudParamHandler(CloudLoggingHandler):
         labels = {**http_labels, **handler_labels, **record_labels}
         record._labels = labels
         record._http_request = None
-        print(f"------------------- Prepared: {record.name} ------------------------")
-        print(f"http_request: {record._http_request} ")
-        print(f"Labels: {record._labels} ")
-        print("---------------------------------------------------------")
-        if isinstance(self.client, StreamClient) and resource:
+        # print(f"------------------- Prepared: {record.name} ------------------------")
+        # print(f"http_request: {record._http_request} ")
+        # print(f"Labels: {record._labels} ")
+        # print("---------------------------------------------------------")
+        if isinstance(self.client, StreamClient) and isinstance(resource, Resource):
             record._resource = resource._to_dict()
         return record
 
@@ -299,6 +299,23 @@ class CloudLog(logging.Logger):
         elif parent and not isinstance(parent, logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
         self.parent = parent
+
+    @classmethod
+    def basicConfig(cls, config=None, **kwargs):
+        logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
+        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+        config = cls.config_as_dict(config)
+        debug = kwargs.pop('debug', None) or config.get('DEBUG', None)
+        testing = kwargs.pop('testing', None) or config.get('TESTING', None)
+        if testing:
+            return False
+        try:
+            logging.basicConfig(**kwargs)
+        except Exception as e:
+            print("********************** Unable to do basicConfig **********************")
+            logging.exception(e)
+            return False
+        return None
 
     @classmethod
     def getLogger(cls, name):
@@ -646,3 +663,21 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
         extra = [extra]
     cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra]
     return (log_client, *cloud_logs)
+
+
+def logger_coverage(logger):
+    """Determine what logging levels are covered for a given (all?) logger. """
+    construct_level = logger.level
+    delayed = []
+    for handler in logger.handlers:
+        has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
+        if has_external_log:
+            delayed.append(handler)
+            continue
+        low = max((construct_level, handler.level))
+        high = MAX_LOG_LEVEL
+        ranges = []
+        for filter in handler.filters:
+            if isinstance(filter, LowPassFilter):
+                pass
+        # client = getattr(handler, 'client', None)
