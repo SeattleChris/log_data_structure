@@ -17,38 +17,62 @@ def create_app(config, config_overrides=dict()):
     app.debug = debug
     app.testing = testing
 
+    def get_cloud_setup():
+        """Get the content setup if CloudLog.basicConfig was successful. """
+        expected = (
+            '_config_resource',
+            '_config_lables',
+            '_config_log_client',
+            '_config_name',
+            '_config_base_level',
+            '_config_high_level',
+            '_config_app_handler',
+        )
+        rv = {key.lstrip('_config_'): getattr(logging.root, key, None) for key in expected}
+        if any(val is None for val in rv.values()):
+            rv = {}
+        return rv
+
     @app.before_first_request
     def attach_cloud_loggers():
         build = ' First Request on Build: {} '.format(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
         logging.info('{:*^74}'.format(build))
-        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
-        root_handler = logging.root.handlers[0]
-        base_level = logging.DEBUG if debug else logging.INFO
-        cloud_level = logging.WARNING
+        cl_setup = get_cloud_setup()
+        base_level = cl_setup.get('base_level', logging.DEBUG if debug else logging.INFO)
+        cloud_level = cl_setup.get('high_level', logging.WARNING)
         log_name = 'alert'
-        log_client, alert, app_handler, c_log, res = None, None, None, None, None
-        if not testing and not config.standard_env:
+        log_client, res, app_handler, alert, c_log = None, None, None, None, None
+        if testing:
+            pass
+        elif not config.standard_env:
+            cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
             log_client, alert, *skip = setup_cloud_logging(cred_path, base_level, cloud_level, config, log_name)
-        elif not testing:
-            try:
-                log_client = CloudLog.make_client(cred_path)
-            except Exception as e:
-                logging.exception(e)
-                log_client = logging
-            # res = CloudLog.make_resource(config, fancy='I am')  # TODO: fix passing a created resource.
+        else:
+            if cl_setup:
+                log_client = cl_setup.get('log_client', None)
+                app_handler = cl_setup.get('app_handler', None)
+                res = cl_setup.get('resource', None)
+            else:
+                cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+                try:
+                    log_client = CloudLog.make_client(cred_path)
+                except Exception as e:
+                    logging.exception(e)
+                    log_client = logging
+                # res = CloudLog.make_resource(config, fancy='I am')  # TODO: fix passing a created resource.
+                app_handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_level, res, log_client)
+                low_filter = LowPassFilter(app.logger.name, cloud_level)  # Do not log at this level or higher.
+                if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
+                    root_handler = logging.root.handlers[0]
+                    root_handler.addFilter(low_filter)
+                else:  # Hi: name out, Lo: application out; propagate=False
+                    low_handler = CloudLog.make_handler(app.logger.name, base_level, res, log_client)
+                    low_handler.addFilter(low_filter)
+                    app.logger.addHandler(low_handler)
+                    app.logger.propagate = False
             alert = CloudLog(log_name, base_level, res, log_client)  # name out, propagate=True
             c_log = CloudLog('c_log', base_level, res, logging)  # stderr out, propagate=False
-            app_handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_level, res, log_client)
             app.logger.addHandler(app_handler)  # name out, propagate=True
-            low_filter = LowPassFilter(app.logger.name, cloud_level)  # Do not log at this level or higher.
-            if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
-                root_handler.addFilter(low_filter)
-            else:  # Hi: name out, Lo: application out; propagate=False
-                name = app.logger.name  # if app.logger.name not in ('', None, app_handler.name) else 'app_low_handler'
-                low_handler = CloudLog.make_handler(name, base_level, res, log_client)
-                low_handler.addFilter(low_filter)
-                app.logger.addHandler(low_handler)
-                app.logger.propagate = False
         app.log_client = log_client
         app._resource_test = res
         app.alert = alert
