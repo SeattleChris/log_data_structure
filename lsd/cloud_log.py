@@ -299,6 +299,10 @@ class CloudLog(logging.getLoggerClass()):
         self.parent = parent
 
     @classmethod
+    def getLogger(cls, name):
+        return logging.getLogger(name)
+
+    @classmethod
     def ensure_logger_class(cls):
         """If not already done, sets the CloudLog class as the with setLoggerClass function. """
         old_class = logging.getLoggerClass()
