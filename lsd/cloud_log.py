@@ -309,6 +309,20 @@ class CloudLog(logging.Logger):
         testing = kwargs.pop('testing', None) or config.get('TESTING', None)
         if testing:
             return False
+        base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
+        base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
+        high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
+        if high_level < base_level:
+            raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
+        low_handler = logging.StreamHandler(stdout)
+        low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
+        low_handler.addFilter(low_filter)
+        low_handler.set_name('root_low')
+        high_handler = logging.StreamHandler(stderr)
+        high_handler.setLevel(high_level)
+        high_handler.set_name('root_high')
+        kwargs['handlers'] = [low_handler, high_handler]
+        kwargs['level'] = base_level
         try:
             logging.basicConfig(**kwargs)
         except Exception as e:
