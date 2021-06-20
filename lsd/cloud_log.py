@@ -266,8 +266,9 @@ class CloudLog(logging.Logger):
     def __init__(self, name=None, level=None, resource=None, client=None, **kwargs):
         stream = kwargs.pop('stream', None)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        # 'handler_name' is ignored, using name for both the logger and handler
-        handler_level = kwargs.pop('handler_level', None)
+        default_handle_name = self.APP_HANDLER_NAME if name == __name__ else self.DEFAULT_HANDLER_NAME
+        handle_name = kwargs.pop('handler_name', default_handle_name)
+        handle_level = kwargs.pop('handler_level', None)
         parent = kwargs.pop('parent', logging.root)
         # 'res_type' is passed through to Resource constructor
         cred_or_path = kwargs.pop('cred_or_path', None)
@@ -282,15 +283,15 @@ class CloudLog(logging.Logger):
         # self.py_logger = logging.getLogger(name)
         if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
             resource = self.make_resource(resource, **kwargs)
-        self.resource = resource._to_dict()
         self.labels = getattr(resource, 'labels', self.get_environment_labels(environ))
+        self.resource = resource._to_dict()
         if client is logging:
             self.propagate = False
         else:    # client may be None, a cloud_logging.Client, a credential object or path.
             client = self.make_client(client, **client_kwargs, **self.labels)
         self.client = client  # accessing self.project may, on edge cases, set self.client
         # self._project = self.project  # may create and assign self.client if required to get project id.
-        handler = self.make_handler(name, handler_level, resource, client, fmt=fmt, stream=stream, **self.labels)
+        handler = self.make_handler(handle_name, handle_level, resource, client, fmt=fmt, stream=stream, **self.labels)
         self.addHandler(handler)
         if parent == name:
             parent = None
