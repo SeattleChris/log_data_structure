@@ -350,6 +350,8 @@ class CloudLog(logging.Logger):
             resource = cls.make_resource(config, **resource)
         labels = getattr(resource, 'labels', cls.get_environment_labels())
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
+        for field in (key for key in cls.CLIENT_KW if key not in client_kwargs and key in labels):
+            client_kwargs[field] = labels[field]
         try:
             log_client = CloudLog.make_client(cred_path, **client_kwargs)
         except Exception as e:
