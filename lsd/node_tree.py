@@ -258,6 +258,11 @@ def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_lo
         if isinstance(node, LogClass):
             node = LogNode(node)
         tree[node.name] = node
+    else:
+        logger, node = node, tree.get(node.name)
+        if node._logger is None and isinstance(logger, LogClass):
+            node._logger = logger
+            node.compute_handlers = 'clear'
     if not name:  # node can still be a LogClass or LogNode
         name = node.name
         name_low = getattr(node, 'min', getattr(node, 'level', None)) or name_low
