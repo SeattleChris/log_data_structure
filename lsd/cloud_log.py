@@ -277,10 +277,11 @@ class CloudLog(logging.getLoggerClass()):
             parent = None
         elif parent and isinstance(parent, str):
             parent = logging.getLogger(parent.lower())
+        elif parent == logging.root:
+            pass
         elif parent and not isinstance(parent, logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
-        if parent:
-            self.parent = parent
+        self.parent = parent
 
     @property
     def project(self):
