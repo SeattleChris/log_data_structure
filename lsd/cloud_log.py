@@ -14,6 +14,21 @@ DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%
 MAX_LOG_LEVEL = logging.CRITICAL
 
 
+def _clean_level(level):
+    """Used if logging._checkLevel is not available. """
+    name_to_level = logging._nameToLevel
+    if isinstance(level, str):
+        level = name_to_level.get(level.upper(), None)
+        if level is None:
+            raise ValueError("The level string was not a recognized value. ")
+    elif isinstance(level, int):
+        if level not in name_to_level.values():
+            raise ValueError("The level integer was not a recognized value. ")
+    else:
+        raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+    return level
+
+
 class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
     DEFAULT_LEVEL = logging.WARNING
@@ -339,17 +354,9 @@ class CloudLog(logging.getLoggerClass()):
         if level is None and default is None:
             default = cls.DEFAULT_LEVEL
             default = default if default is not None else logging.WARNING
-        level = level or default
-        name_to_level = logging._nameToLevel
-        if isinstance(level, str):
-            level = name_to_level.get(level.upper(), None)
-            if level is None:
-                raise ValueError("The level string was not a recognized value. ")
-        elif isinstance(level, int):
-            if level not in name_to_level.values():
-                raise ValueError("The level integer was not a recognized value. ")
-        else:
-            raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+        level = level if level is not None else default
+        clean_level = getattr(logging, '_checkLevel', _clean_level)
+        level = clean_level(level)
         return level
 
     @classmethod
