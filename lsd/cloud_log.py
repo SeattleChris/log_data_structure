@@ -503,13 +503,13 @@ class CloudLog(logging.Logger):
         if not name or not isinstance(name, str):
             name = cls.DEFAULT_HANDLER_NAME
         if not name:
-            raise TypeError("Either a name, or a default name, string must be provided. ")
+            raise TypeError(f"Either a name, or a default name, string must be provided. {name} did not work. ")
         return name.lower()
 
     @classmethod
     def make_client(cls, cred_or_path=None, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
+        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient, logging)):
             return cred_or_path
         client_kwargs = {key: kwargs[key] for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
         if isinstance(cred_or_path, service_account.Credentials):
