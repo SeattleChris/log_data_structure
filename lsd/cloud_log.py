@@ -509,7 +509,7 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_client(cls, cred_or_path=None, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient, logging)):
+        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)) or cred_or_path == logging:
             return cred_or_path
         client_kwargs = {key: kwargs[key] for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
         if isinstance(cred_or_path, service_account.Credentials):
