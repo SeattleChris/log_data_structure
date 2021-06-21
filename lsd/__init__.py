@@ -26,7 +26,6 @@ def create_app(config, config_overrides=dict()):
             '_config_name',
             '_config_base_level',
             '_config_high_level',
-            '_config_app_handler',
         )
         rv = {key.lstrip('_config_'): getattr(logging.root, key, None) for key in expected}
         if any(val is None for val in rv.values()):
@@ -61,18 +60,19 @@ def create_app(config, config_overrides=dict()):
                     log_client = logging
                 # res = CloudLog.make_resource(config, fancy='I am')  # TODO: fix passing a created resource.
                 app_handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_level, res, log_client)
+                app.logger.addHandler(app_handler)  # name out, propagate=True
                 low_filter = LowPassFilter(app.logger.name, cloud_level)  # Do not log at this level or higher.
                 if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
                     root_handler = logging.root.handlers[0]
                     root_handler.addFilter(low_filter)
                 else:  # Hi: name out, Lo: application out; propagate=False
-                    low_handler = CloudLog.make_handler(app.logger.name, base_level, res, log_client)
+                    low_name = CloudLog.APP_HANDLER_NAME + '_low'
+                    low_handler = CloudLog.make_handler(low_name, base_level, res, log_client)
                     low_handler.addFilter(low_filter)
                     app.logger.addHandler(low_handler)
                     app.logger.propagate = False
             alert = CloudLog(log_name, base_level, res, log_client)  # name out, propagate=True
             c_log = CloudLog('c_log', base_level, res, logging)  # stderr out, propagate=False
-            app.logger.addHandler(app_handler)  # name out, propagate=True
         app.log_client = log_client
         app._resource_test = res
         app.alert = alert

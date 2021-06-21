@@ -367,7 +367,6 @@ class CloudLog(logging.Logger):
         except Exception as e:
             logging.exception(e)
             log_client = logging
-        app_handler = None
         # low_app_filter = LowPassFilter(name, high_level)  # Do not log at this level or higher.
         # if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
         #     root_handler = logging.root.handlers[0]
@@ -388,9 +387,7 @@ class CloudLog(logging.Logger):
         high_handler.set_name('root_high')
         kwargs['handlers'] = [low_handler, high_handler, high_report]
         kwargs['level'] = base_level
-        if log_client is logging:
-            app_handler = cls.make_handler(handler_name, high_level, resource, log_client)
-        else:
+        if log_client is not logging:
             cls.add_high_report([name, handler_name])
         try:
             logging.basicConfig(**kwargs)
@@ -401,7 +398,6 @@ class CloudLog(logging.Logger):
             root._config_name = name
             root._config_base_level = base_level
             root._config_high_level = high_level
-            root._config_app_handler = app_handler
         except Exception as e:
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
