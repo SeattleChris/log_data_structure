@@ -314,6 +314,17 @@ class CloudLog(logging.Logger):
         elif parent and not isinstance(parent, logging.getLoggerClass()):
             raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
         self.parent = parent
+        self.add_loggerDict()
+
+    def add_loggerDict(self):
+        manager = self.manager
+        existing_logger = manager.loggerDict.get(self.name, None)
+        if isinstance(existing_logger, logging.PlaceHolder):
+            manager._fixupChildren(existing_logger, self)
+        elif existing_logger is not None and existing_logger != self:
+            raise ValueError(f"A {self.name} logger already exists: {existing_logger}. Cannot replace with {self}.")
+        manager.loggerDict[self.name] = self
+        manager._fixupParents(self)
 
     @classmethod
     def make_high_report(cls):
