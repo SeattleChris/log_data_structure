@@ -220,7 +220,7 @@ class CloudParamHandler(CloudLoggingHandler):
 
 class CloudLog(logging.Logger):
     """Extended python Logger class that attaches a google cloud log handler. """
-    APP_LOGGER_NAME = 'application'
+    APP_LOGGER_NAME = __package__  # TODO: Update if this logging package is imported into an application.
     APP_HANDLER_NAME = 'app'
     DEFAULT_LOGGER_NAME = None
     DEFAULT_HANDLER_NAME = None
@@ -266,7 +266,8 @@ class CloudLog(logging.Logger):
     def __init__(self, name=None, level=None, resource=None, client=None, **kwargs):
         stream = kwargs.pop('stream', None)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        default_handle_name = self.APP_HANDLER_NAME if name == __name__ else self.DEFAULT_HANDLER_NAME
+        default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
+        default_handle_name = default_handle_name or name
         handle_name = kwargs.pop('handler_name', default_handle_name)
         handle_level = kwargs.pop('handler_level', None)
         parent = kwargs.pop('parent', logging.root)
