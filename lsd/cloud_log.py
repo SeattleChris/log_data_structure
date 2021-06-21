@@ -419,7 +419,9 @@ class CloudLog(logging.Logger):
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
             return False
-        return None
+        cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
+        cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
+        return cloud_config
 
     @classmethod
     def getLogger(cls, name):
