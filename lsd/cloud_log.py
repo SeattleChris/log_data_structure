@@ -67,10 +67,13 @@ class LowPassFilter(logging.Filter):
         return True
 
     def __repr__(self):
+        if self.name == NON_EXISTING_LOGGER_NAME:
+            return '<LowPassFilter only {}>'.format(', '.join(self._allowed_high))
         name = self.name or 'All'
+        allowed = ' '
         if len(self._allowed_high):
-            name += ' except ' + ', '.join(self._allowed_high)
-        return '<LowPassFilter on {} | under: {}>'.format(name, self.below_level)
+            allowed = ' and any ' + ', '.join(self._allowed_high)
+        return '<LowPassFilter only {} under {}{}>'.format(name, self.below_level, allowed)
 
 
 class StreamClient:
