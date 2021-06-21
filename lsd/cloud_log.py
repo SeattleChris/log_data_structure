@@ -66,6 +66,12 @@ class LowPassFilter(logging.Filter):
         # record._severity = record.levelname
         return True
 
+    def __repr__(self):
+        name = self.name or 'All'
+        if len(self._allowed_high):
+            name += ' except ' + ', '.join(self._allowed_high)
+        return '<LowPassFilter on {} | under: {}>'.format(name, self.below_level)
+
 
 class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
