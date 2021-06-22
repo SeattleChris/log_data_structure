@@ -59,6 +59,9 @@ class IgnoreFilter(logging.Filter):
             return False
         return True
 
+    def __repr__(self) -> str:
+        return '<IgnoreFilter {}>'.format(', '.join(self.ignore))
+
 
 class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
