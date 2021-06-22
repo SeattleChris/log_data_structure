@@ -604,9 +604,9 @@ class CloudLog(logging.Logger):
         if not project_id:
             project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
         project_id = project_id or ''
-        pid = 'project_id'
+        pid = ('project_id', 'project')
         for key in cls.RESOURCE_REQUIRED_FIELDS[res_type]:
-            backup_value = project_id if key == pid else ''
+            backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
                 logging.warning(f"Could not find {key} for Resource {res_type}. ")
             settings.setdefault(key, backup_value)
@@ -614,12 +614,14 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def get_environment_labels(cls, config=environ):
-        """Returns a dict of context parameters, using either the config dict or values found in the environment. """
+        """Using the config dict, or environment, Returns a dict of context parameters if their values are truthy. """
         project_id = config.get('PROJECT_ID')
         project = config.get('GOOGLE_CLOUD_PROJECT') or config.get('PROJECT')
         if project and project_id and project != project_id:
             raise Warning(f"The 'project' and 'project_id' are not equal: {project} != {project_id} ")
-        project = project or project_id or ''
+        if not any((project, project_id)):
+            raise Warning("Unable to find the critical project id setting from config. Checking environment later. ")
+        project = project or project_id
         return {
             'gae_env': config.get('GAE_ENV') or '',
             'project': project,
