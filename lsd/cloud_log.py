@@ -84,6 +84,8 @@ class LowPassFilter(logging.Filter):
         if name and isinstance(name, str):
             self._allowed_high.add(name)
             rv = name
+        if rv is None:
+            raise TypeError("Unable to add log record name to the LowPassFilter allowed collection. ")
         return rv
 
     def filter(self, record):
