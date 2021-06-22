@@ -362,8 +362,11 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def add_high_report(cls, name):
-        """Any log records with a matching name will be logged by the high_report handler on root. """
+        """Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+        root_high = logging._handlers.get('root_high', None)
         high_report = logging._handlers.get('high_report', None)
+        if not root_high:
+            raise LookupError("Unable to locate 'root_high' logger. ")
         if not high_report:
             high_report = cls.make_high_report()
             logging.root.addHandler(high_report)
@@ -374,6 +377,21 @@ class CloudLog(logging.Logger):
             print(e)  # TODO: Update logging.
             raise KeyError("Unable to find the name filter on the high_report handler. ")
         rv = name_filter.add_allowed_high(name)
+        targets = [filter for filter in root_high.filters if isinstance(filter, IgnoreFilter)]
+        if len(targets) > 1:
+            raise Warning("More than one possible IgnoreFilter attached to 'root_high' handler. Using first one. ")
+        try:
+            ignore_filter = targets[0]
+        except IndexError:
+            ignore_filter = IgnoreFilter()
+            root_high.addFilter(ignore_filter)
+        if isinstance(rv, str):
+            rv = [rv]
+        if isinstance(rv, list):
+            result = [ignore_filter.add(ea) for ea in rv]
+            rv = all(bool(ea) for ea in result) and len(result) > 0
+        else:
+            raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
         return bool(rv)
 
     @classmethod
