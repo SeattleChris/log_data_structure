@@ -356,15 +356,7 @@ class CloudLog(logging.Logger):
         # self._project = self.project  # may create and assign self.client if required to get project id.
         handler = self.make_handler(handle_name, handle_level, resource, client, fmt=fmt, stream=stream, **self.labels)
         self.addHandler(handler)
-        if parent == name:
-            parent = None
-        elif parent and isinstance(parent, str):
-            parent = logging.getLogger(parent.lower())
-        elif parent == logging.root:
-            pass
-        elif parent and not isinstance(parent, logging.getLoggerClass()):
-            raise TypeError("The 'parent' value must be a string, None, or an existing logger. ")
-        self.parent = parent
+        self.parent = self.normalize_parent(parent, name)
         self.add_loggerDict(replace)
 
     def add_loggerDict(self, replace=False):
@@ -578,6 +570,21 @@ class CloudLog(logging.Logger):
         if not name:
             raise TypeError(f"Either a name, or a default name, string must be provided. {name} did not work. ")
         return name.lower()
+
+    @classmethod
+    def normalize_parent(cls, parent, name):
+        """Returns a logger or None, as appropriate according to the input value. """
+        if not parent:
+            return None
+        if isinstance(parent, str):
+            parent = parent.lower()
+            if parent == name:
+                parent = None
+            else:
+                parent = logging.getLogger(parent)
+        elif not isinstance(parent, logging.Logger):
+            raise TypeError("The 'parent' value must be a string, a logger, or None. ")
+        return parent
 
     @classmethod
     def make_client(cls, cred_or_path=None, **kwargs):
