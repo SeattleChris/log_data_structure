@@ -33,9 +33,10 @@ def _clean_level(level):
 class IgnoreFilter(logging.Filter):
     """Allows to pass all log records except those with names in the ignore collection. """
 
-    def __init__(self, name: str, ignore: list = list()) -> None:
+    def __init__(self, name: str = '', ignore: list = list()) -> None:
         super().__init__(name='')
-        ignore.append(name)
+        if name:
+            ignore.append(name)
         self.ignore = set(ignore)
 
     def add(self, name: str):
@@ -43,13 +44,14 @@ class IgnoreFilter(logging.Filter):
         if not isinstance(name, str):
             raise TypeError("Expected a str input for a log record name. ")
         self.ignore.add(name)
-        pass
+        return True
 
     def allow(self, name: str):
         """Remove from the ignore collection, allowing log records with that name to be logged. """
         if not isinstance(name, str):
             raise TypeError("Expected a str input for a log record name. ")
         self.ignore.discard(name)
+        return True
 
     def filter(self, record):
         if record.name in self.ignore:
