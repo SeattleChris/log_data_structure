@@ -259,7 +259,7 @@ class CloudParamHandler(CloudLoggingHandler):
         handler_labels = getattr(self, 'labels', {})
         record_labels = getattr(record, '_labels', {})
         labels = {**http_labels, **handler_labels, **record_labels}
-        record._labels = {k: v for k, v in labels.items() if v is not None}
+        record._labels = labels
         record._http_request = None
         # print(f"------------------- Prepared: {record.name} ------------------------")
         # print(f"http_request: {record._http_request} ")
@@ -533,18 +533,20 @@ class CloudLog(logging.Logger):
     def project(self):
         """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
         if not getattr(self, '_project', None):
-            project = self.labels.get('project', None)
+            project = self.labels.get('project', None) or self.labels.get('project_id', None)
             if not project and self.resource:
                 project = self.resource.get('labels', {})
                 project = project.get('project_id') or project.get('project')
             if not project and isinstance(self.client, cloud_logging.Client):
                 project = self.client.project
             if not project:
-                project = environ.get('GOOGLE_CLOUD_PROJECT', environ.get('PROJECT_ID', None))
+                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
             if not project:
                 cred_path = environ.get('GOOGLE_APPLICATION_CREDENTIALS', None)
                 self.client = self.make_client(cred_path)
                 project = self.client.project
+            if not project:
+                raise LookupError("Unable to discover the required Project id. ")
             self._project = project
         return self._project
 
