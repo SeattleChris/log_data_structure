@@ -111,11 +111,7 @@ class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
 
     def __init__(self, name, labels=None, resource=None, project=None, handler=None):
-        if not project and isinstance(labels, dict):
-            project = labels.get('project', labels.get('project_id', None))
-        if not project:
-            project = environ.get('GOOGLE_CLOUD_PROJECT', environ.get('PROJECT_ID', ''))
-        self.project = project
+        self._project = project or ''
         self.handler_name = name.lower()
         self.labels = labels if isinstance(labels, dict) else {'project': project}
         self.resource = resource
@@ -137,6 +133,21 @@ class StreamClient:
         handler.labels = self.labels
         handler.resource = self.resource
         return handler
+
+    @property
+    def project(self):
+        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
+        if not getattr(self, '_project', None):
+            project = self.labels.get('project_id') or self.labels.get('project')
+            if not project and self.resource:
+                project = self.resource.get('labels', {})
+                project = project.get('project_id') or project.get('project')
+            if not project:
+                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
+            if not project:
+                raise LookupError("Unable to discover the required Project id. ")
+            self._project = project
+        return self._project
 
     def logger(self, name):
         """Similar interface of google.cloud.logging.Client, but returns standard library logging.Handler instance. """
