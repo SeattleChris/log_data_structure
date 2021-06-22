@@ -111,9 +111,10 @@ class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
 
     def __init__(self, name, labels=None, resource=None, project=None, handler=None):
-        self._project = project or ''
         self.handler_name = name.lower()
-        self.labels = labels if isinstance(labels, dict) else {'project': project}
+        self._project = project or ''
+        self._labels = labels if isinstance(labels, dict) else {}
+        # self.labels = labels if isinstance(labels, dict) else {'project_id': project}
         self.resource = resource
         self.handler = self.prepare_handler(handler)
 
@@ -136,18 +137,30 @@ class StreamClient:
 
     @property
     def project(self):
-        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
+        """If unknown, computes & sets from labels, resource, or environ. Raises LookupError if unable to determine. """
         if not getattr(self, '_project', None):
-            project = self.labels.get('project_id') or self.labels.get('project')
-            if not project and self.resource:
-                project = self.resource.get('labels', {})
-                project = project.get('project_id') or project.get('project')
+            labels = self.labels  # To only compute once if not yet valid.
+            project = labels.get('project_id') or labels.get('project')  # checks resource if labels not valid yet.
             if not project:
                 project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
             if not project:
                 raise LookupError("Unable to discover the required Project id. ")
             self._project = project
         return self._project
+
+    @property
+    def labels(self):
+        """If the expected 'project_id' is not in labels, will attempt to get labels from resource or _project. """
+        labels_have_valid_data = bool(self._labels.get('project_id', None))
+        if not labels_have_valid_data:
+            try:
+                labels = self.resource.get('labels', {}).copy()
+            except Exception:
+                labels = {}
+            project = labels.get('project_id') or labels.get('project')
+            labels['project_id'] = project or self._project
+            self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
+        return self._labels
 
     def logger(self, name):
         """Similar interface of google.cloud.logging.Client, but returns standard library logging.Handler instance. """
