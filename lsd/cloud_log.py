@@ -588,15 +588,20 @@ class CloudLog(logging.Logger):
     @classmethod
     def get_environment_labels(cls, config=environ):
         """Returns a dict of context parameters, using either the config dict or values found in the environment. """
+        project_id = config.get('PROJECT_ID')
+        project = config.get('GOOGLE_CLOUD_PROJECT') or config.get('PROJECT')
+        if project and project_id and project != project_id:
+            raise Warning(f"The 'project' and 'project_id' are not equal: {project} != {project_id} ")
+        project = project or project_id or ''
         return {
-            'gae_env': config.get('GAE_ENV', ''),
-            'project': config.get('GOOGLE_CLOUD_PROJECT', ''),
-            'project_id': config.get('PROJECT_ID', ''),
-            'service': config.get('GAE_SERVICE', ''),
-            'module_id': config.get('GAE_SERVICE', ''),
-            'code_service': config.get('CODE_SERVICE', ''),  # Either local or GAE_SERVICE value
-            'version_id': config.get('GAE_VERSION', ''),
-            'zone': config.get('PROJECT_ZONE', ''),
+            'gae_env': config.get('GAE_ENV') or '',
+            'project': project,
+            'project_id': project,
+            'service': config.get('GAE_SERVICE') or '',
+            'module_id': config.get('GAE_SERVICE') or '',
+            'code_service': config.get('CODE_SERVICE') or '',  # Either local or GAE_SERVICE value
+            'version_id': config.get('GAE_VERSION') or '',
+            'zone': config.get('PROJECT_ZONE') or '',
             }
 
     @classmethod
