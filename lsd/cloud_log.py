@@ -1,5 +1,6 @@
 from collections import defaultdict
 import logging
+import warnings
 from sys import stderr, stdout
 from flask import json
 from google.cloud import logging as cloud_logging
@@ -577,7 +578,7 @@ class CloudLog(logging.Logger):
         for key in cls.RESOURCE_REQUIRED_FIELDS[res_type]:
             backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
-                logging.warning(f"Could not find {key} for Resource {res_type}. ")
+                warnings.warn("Could not find {} for Resource {}. ".format(key, res_type))
             settings.setdefault(key, backup_value)
         return res_type, settings
 
@@ -587,9 +588,9 @@ class CloudLog(logging.Logger):
         project_id = config.get('PROJECT_ID')
         project = config.get('GOOGLE_CLOUD_PROJECT') or config.get('PROJECT')
         if project and project_id and project != project_id:
-            raise Warning(f"The 'project' and 'project_id' are not equal: {project} != {project_id} ")
+            warnings.warn("The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id))
         if not any((project, project_id)):
-            raise Warning("Unable to find the critical project id setting from config. Checking environment later. ")
+            warnings.warn("Unable to find the critical project id setting from config. Checking environment later. ")
         project = project or project_id
         labels = {
             'gae_env': config.get('GAE_ENV'),
@@ -601,7 +602,7 @@ class CloudLog(logging.Logger):
             'version_id': config.get('GAE_VERSION'),
             'zone': config.get('PROJECT_ZONE'),
             }
-        return {k: v for k, v in labels if v}
+        return {k: v for k, v in labels.items() if v}
 
     @classmethod
     def config_as_dict(cls, config):
@@ -759,7 +760,7 @@ class CloudLog(logging.Logger):
                 if hasattr(adapter or logger, level):
                     getattr(adapter or logger, level)(' - '.join((context, name, level, code)))
                 else:
-                    logging.warning(f"{context} in {code}: No {level} method on logger {name} ")
+                    logging.warning("{} in {}: No {} method on logger {} ", context, code, level, name)
         print(f"=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
         print(found_handler_str)
         creds_list = []
