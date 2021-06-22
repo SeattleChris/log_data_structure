@@ -604,6 +604,8 @@ class CloudLog(logging.Logger):
         if not project_id:
             project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
         project_id = project_id or ''
+        if not project_id:
+            raise Warning("The important project id has not been found from passed settings or environment. ")
         pid = ('project_id', 'project')
         for key in cls.RESOURCE_REQUIRED_FIELDS[res_type]:
             backup_value = project_id if key in pid else ''
