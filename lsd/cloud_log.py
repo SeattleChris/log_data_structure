@@ -624,16 +624,17 @@ class CloudLog(logging.Logger):
         if not any((project, project_id)):
             raise Warning("Unable to find the critical project id setting from config. Checking environment later. ")
         project = project or project_id
-        return {
-            'gae_env': config.get('GAE_ENV') or '',
+        labels = {
+            'gae_env': config.get('GAE_ENV'),
             'project': project,
             'project_id': project,
-            'service': config.get('GAE_SERVICE') or '',
-            'module_id': config.get('GAE_SERVICE') or '',
-            'code_service': config.get('CODE_SERVICE') or '',  # Either local or GAE_SERVICE value
-            'version_id': config.get('GAE_VERSION') or '',
-            'zone': config.get('PROJECT_ZONE') or '',
+            'service': config.get('GAE_SERVICE'),
+            'module_id': config.get('GAE_SERVICE'),
+            'code_service': config.get('CODE_SERVICE'),  # Either local or GAE_SERVICE value
+            'version_id': config.get('GAE_VERSION'),
+            'zone': config.get('PROJECT_ZONE'),
             }
+        return {k: v for k, v in labels if v}
 
     @classmethod
     def config_as_dict(cls, config):
@@ -648,10 +649,9 @@ class CloudLog(logging.Logger):
     def make_resource(cls, config, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
         config = cls.config_as_dict(config)
-        added_labels = cls.get_environment_labels(config)
-        for key, val in added_labels.items():
-            kwargs.setdefault(key, val)
-        res_type, labels = cls.get_resource_fields(kwargs)
+        labels = cls.get_environment_labels(config)
+        labels.update(kwargs)
+        res_type, labels = cls.get_resource_fields(labels)
         return Resource(res_type, labels)
 
     @classmethod
