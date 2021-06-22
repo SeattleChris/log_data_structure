@@ -30,6 +30,33 @@ def _clean_level(level):
     return level
 
 
+class IgnoreFilter(logging.Filter):
+    """Allows to pass all log records except those with names in the ignore collection. """
+
+    def __init__(self, name: str, ignore: list = list()) -> None:
+        super().__init__(name='')
+        ignore.append(name)
+        self.ignore = set(ignore)
+
+    def add(self, name: str):
+        """Add another log record name to be ignored and not logged. """
+        if not isinstance(name, str):
+            raise TypeError("Expected a str input for a log record name. ")
+        self.ignore.add(name)
+        pass
+
+    def allow(self, name: str):
+        """Remove from the ignore collection, allowing log records with that name to be logged. """
+        if not isinstance(name, str):
+            raise TypeError("Expected a str input for a log record name. ")
+        self.ignore.discard(name)
+
+    def filter(self, record):
+        if record.name in self.ignore:
+            return False
+        return True
+
+
 class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
     DEFAULT_LEVEL = logging.WARNING
@@ -198,12 +225,13 @@ class CloudParamHandler(CloudLoggingHandler):
         resource = getattr(record, '_resource', None)
         if self.resource and not resource:
             record._resource = resource = self.resource
-        http_req = getattr(record, '_http_request', None)
-        http_labels = {} if not http_req else {'_'.join(('http', key)): val for key, val in http_req.items()}
+        no_http_req = {'request': 'None. Likely testing local. '}
+        http_req = getattr(record, '_http_request', None) or no_http_req
+        http_labels = {'_'.join(('http', key)): val for key, val in http_req.items()}
         handler_labels = getattr(self, 'labels', {})
         record_labels = getattr(record, '_labels', {})
         labels = {**http_labels, **handler_labels, **record_labels}
-        record._labels = labels
+        record._labels = {k: v for k, v in labels.items() if v is not None}
         record._http_request = None
         # print(f"------------------- Prepared: {record.name} ------------------------")
         # print(f"http_request: {record._http_request} ")
@@ -213,16 +241,8 @@ class CloudParamHandler(CloudLoggingHandler):
             record._resource = resource._to_dict()
         return record
 
-    def test_prepare(self, record):
-        """Temporary. Only used to test http_request values management. """
-        http_req = getattr(record, '_http_request', None)
-        if not http_req:
-            record._http_request = {'requestKey': 'requestValue'}
-        return record
-
     def emit(self, record):
         """After preparing the record data, will call the appropriate StreamTransport or BackgroundThreadTransport. """
-        self.test_prepare(record)
         self.prepare_record_data(record)
         super().emit(record)
 
