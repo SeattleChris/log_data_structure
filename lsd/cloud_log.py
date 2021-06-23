@@ -67,10 +67,11 @@ class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
     DEFAULT_LEVEL = logging.WARNING
 
-    def __init__(self, name: str, level: int) -> None:
+    def __init__(self, name: str, level: int, title: str = '') -> None:
         super().__init__(name=name)
+        self.title = title
         self._allowed_high = set()
-        level = 1 if name == NON_EXISTING_LOGGER_NAME else CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
+        level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
         self.below_level = level
         assert self.below_level > 0
 
