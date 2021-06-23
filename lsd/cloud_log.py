@@ -255,7 +255,8 @@ class StreamTransport(BackgroundThreadTransport):
         return self.handler.handleError(record)
 
     def __repr__(self) -> str:
-        return '<StreamTransport {} | {}>'.format(self.destination, self.handler_name)
+        level = logging.getLevelName(self.handler.level)
+        return '<%s %s | (%s) %s>' % (self.__class__.__name__, self.destination, level, self.handler_name)
 
 
 class CloudParamHandler(CloudLoggingHandler):
@@ -328,7 +329,8 @@ class CloudParamHandler(CloudLoggingHandler):
         return self._destination
 
     def __repr__(self) -> str:
-        return '<CloudParamHandler {} | {}>'.format(self.destination, self.name)
+        level = logging.getLevelName(self.level)
+        return '<%s %s | (%s) %s>' % (self.__class__.__name__, self.destination, level, self.name)
 
 
 class CloudLog(logging.Logger):
