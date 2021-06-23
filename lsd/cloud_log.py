@@ -235,6 +235,12 @@ class StreamTransport(BackgroundThreadTransport):
         return self.client.logger(self.handler_name)
 
     @property
+    def destination(self):
+        if not getattr(self, '_destination', None):
+            self._destination = self.stream.name.lstrip('<').rstrip('>')
+        return self._destination
+
+    @property
     def terminator(self):
         if not getattr(self, '_terminator', None):
             self._terminator = self.handler.terminator
