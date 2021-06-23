@@ -302,12 +302,19 @@ class CloudParamHandler(CloudLoggingHandler):
         self.prepare_record_data(record)
         super().emit(record)
 
+    @property
+    def destination(self):
+        """Keeps a hidden str property that is a cache of previously computed value. """
+        if not getattr(self, '_destination', None):
+            if isinstance(self.transport, StreamTransport):
+                rv = self.transport.destination
+            else:
+                rv = '-/logs/' + self.name
+            self._destination = rv
+        return self._destination
+
     def __repr__(self) -> str:
-        if isinstance(self.transport, StreamTransport):
-            destination = self.transport.stream.name.lstrip('<').rstrip('>')
-        else:
-            destination = '-/logs/' + self.name
-        return '<CloudParamHandler {} | {}>'.format(destination, self.name)
+        return '<CloudParamHandler {} | {}>'.format(self.destination, self.name)
 
 
 class CloudLog(logging.Logger):
