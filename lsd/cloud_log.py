@@ -418,32 +418,11 @@ class CloudLog(logging.Logger):
         manager._fixupParents(self)
 
     @classmethod
-    def make_high_report(cls):
-        """Creates a handler with a filter allowing specific log record names to go to stdout.  """
-        name_filter = LowPassFilter(NON_EXISTING_LOGGER_NAME, 1)
-        high_report = logging.StreamHandler(stdout)
-        high_report.addFilter(name_filter)
-        high_report.setLevel(cls.DEFAULT_HIGH_LEVEL)
-        high_report.set_name('high_report')
-        return high_report
-
-    @classmethod
-    def add_high_report(cls, name):
-        """Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+    def get_ignore_filter(cls):
+        """The 'root_high' handler may need to ignore certain loggers that are being sent to stdout by 'root_low'. """
         root_high = logging._handlers.get('root_high', None)
-        high_report = logging._handlers.get('high_report', None)
         if not root_high:
-            raise LookupError("Unable to locate 'root_high' logger. ")
-        if not high_report:
-            high_report = cls.make_high_report()
-            logging.root.addHandler(high_report)
-        try:
-            name_filter = high_report.filters[0]
-            assert name_filter.name == NON_EXISTING_LOGGER_NAME
-        except (AssertionError, IndexError) as e:
-            print(e)  # TODO: Update logging.
-            raise KeyError("Unable to find the name filter on the high_report handler. ")
-        rv = name_filter.add_allowed_high(name)
+            raise LookupError("Could not find expected 'root_high' handler. ")
         targets = [filter for filter in root_high.filters if isinstance(filter, IgnoreFilter)]
         if len(targets) > 1:
             warnings.warn("More than one possible IgnoreFilter attached to 'root_high' handler. Using the first one. ")
@@ -452,6 +431,31 @@ class CloudLog(logging.Logger):
         except IndexError:
             ignore_filter = IgnoreFilter()
             root_high.addFilter(ignore_filter)
+        return ignore_filter
+
+    @classmethod
+    def get_stdout_filter(cls):
+        """The filter for 'root_low' stdout handler. Allows low level logs AND to report logs recorded elsewhere. """
+        root_low = logging._handlers.get('root_low', None)
+        if not root_low:
+            raise LookupError("Could not find expected 'root_low' handler. ")
+        targets = [filter for filter in root_low.filters if isinstance(filter, LowPassFilter) and not filter.name]
+        if len(targets) > 1:
+            warnings.warn("More than one possible LowPassFilter attached to 'root_low' handler. Using the first one. ")
+        try:
+            stdout_filter = targets[0]
+        except IndexError:
+            stdout_filter = LowPassFilter(name='', level=cls.DEFAULT_HIGH_LEVEL)
+            root_low.addFilter(stdout_filter)
+            # raise KeyError("Unable to find the 'stdout_filter' on the 'root_low' handler. ")
+        return stdout_filter
+
+    @classmethod
+    def add_high_report(cls, name):
+        """Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+        stdout_filter = cls.get_stdout_filter()
+        ignore_filter = cls.get_ignore_filter()
+        rv = stdout_filter.add_allowed_high(name)
         if isinstance(rv, str):
             rv = [rv]
         if isinstance(rv, list):
@@ -495,7 +499,6 @@ class CloudLog(logging.Logger):
         except Exception as e:
             logging.exception(e)
             log_client = logging
-        high_report = cls.make_high_report()
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
@@ -503,7 +506,7 @@ class CloudLog(logging.Logger):
         high_handler = logging.StreamHandler(stderr)
         high_handler.setLevel(high_level)
         high_handler.set_name('root_high')
-        root_handlers.extend((low_handler, high_handler, high_report))
+        root_handlers.extend((low_handler, high_handler))
         kwargs['handlers'] = root_handlers
         kwargs['level'] = base_level
         if log_client is not logging:
