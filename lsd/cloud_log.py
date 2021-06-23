@@ -446,7 +446,7 @@ class CloudLog(logging.Logger):
         rv = name_filter.add_allowed_high(name)
         targets = [filter for filter in root_high.filters if isinstance(filter, IgnoreFilter)]
         if len(targets) > 1:
-            raise Warning("More than one possible IgnoreFilter attached to 'root_high' handler. Using first one. ")
+            warnings.warn("More than one possible IgnoreFilter attached to 'root_high' handler. Using the first one. ")
         try:
             ignore_filter = targets[0]
         except IndexError:
