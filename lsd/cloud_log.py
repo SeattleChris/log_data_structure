@@ -70,7 +70,8 @@ class LowPassFilter(logging.Filter):
     def __init__(self, name: str, level: int) -> None:
         super().__init__(name=name)
         self._allowed_high = set()
-        self.below_level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
+        level = 1 if name == NON_EXISTING_LOGGER_NAME else CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
+        self.below_level = level
         assert self.below_level > 0
 
     def add_allowed_high(self, name):
@@ -83,6 +84,7 @@ class LowPassFilter(logging.Filter):
             try:
                 name = getattr(name, 'name', None)
                 assert isinstance(name, str)
+                assert name != ''
             except (AssertionError, Exception):
                 name = None
         if name and isinstance(name, str):
@@ -272,13 +274,15 @@ class CloudParamHandler(CloudLoggingHandler):
     def get_data_keys(self, ignore=None, ignore_str_keys=True):
         """DEPRECATED. Returns a list of the desired property names for logging that are set by CloudLoggingHandler. """
         keys = set(key[1:] for key in self.filter_keys if not (ignore_str_keys and key.endswith('_str')))
-        ignore = self.ignore if ignore is None else ignore
+        ignore = getattr(self, 'ignore', None) if ignore is None else ignore
         if isinstance(ignore, str):
             ignore = {ignore, }
         if isinstance(ignore, (list, tuple, set)):
             ignore = set(key.lstrip('_') for key in ignore)
         else:
             ignore = set()
+        if not hasattr(self, ignore):
+            self.ignore = ignore
         keys = keys.difference(ignore)
         return keys
 
@@ -307,6 +311,10 @@ class CloudParamHandler(CloudLoggingHandler):
         """After preparing the record data, will call the appropriate StreamTransport or BackgroundThreadTransport. """
         self.prepare_record_data(record)
         super().emit(record)
+
+    @property
+    def project(self):
+        self.client.project
 
     @property
     def destination(self):
@@ -483,17 +491,20 @@ class CloudLog(logging.Logger):
         name = kwargs.pop('name', cls.APP_LOGGER_NAME)
         default_handle_name = cls.APP_HANDLER_NAME if name == cls.APP_LOGGER_NAME else cls.DEFAULT_HANDLER_NAME
         handler_name = kwargs.pop('handler_name', default_handle_name)
-        name = cls.normalize_logger_name(name)  # TODO: Actually use name.
+        name = cls.normalize_logger_name(name)
         handler_name = cls.normalize_handler_name(handler_name)
-        labels = kwargs.pop('labels', None) or {}
+        client_overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW[1:] if key in kwargs}  # except for 'project'
         resource = kwargs.pop('resource', None) or {}
+        labels = kwargs.pop('labels', None) or kwargs.copy()
         if not isinstance(resource, Resource):
             resource.update(labels)
             resource = cls.make_resource(config, **resource)
         labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
         client_kwargs = {k: v for k, v in labels.items() if k in cls.CLIENT_KW}  # such as 'project'
-        overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key in kwargs}
-        client_kwargs.update(overrides)
+        client_kwargs.update(client_overrides)
+        project = kwargs.pop('project', None) or kwargs.pop('project_id', None)
+        if project and 'project' not in client_kwargs:
+            client_kwargs['project'] = project
         try:
             log_client = CloudLog.make_client(cred_path, **client_kwargs)
         except Exception as e:
