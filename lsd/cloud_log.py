@@ -140,6 +140,23 @@ class StreamClient:
         return handler
 
     @property
+    def handler(self):
+        """If possible get from weakref created in logging. Otherwise maintain a strong referenced object. """
+        rv = self._handler or logging._handlers.get(self.handler_name, None)
+        if not rv:
+            rv = self.prepare_handler(stderr)
+            self.handler = rv
+        return rv
+
+    @handler.setter
+    def handler(self, handle):
+        name = getattr(handle, 'name', None)
+        if not name or name not in logging._handlers:
+            self._handler = handle
+        else:
+            self._handler = None  # Forces a lookup on logging._handlers, or creation if not present.
+
+    @property
     def project(self):
         """If unknown, computes & sets from labels, resource, or environ. Raises LookupError if unable to determine. """
         if not getattr(self, '_project', None):
@@ -180,7 +197,7 @@ class StreamTransport(BackgroundThreadTransport):
 
     def __init__(self, client, name, *, grace_period=0, batch_size=0, max_latency=0):
         self.client = client
-        self.handler = client.logger(name)
+        self.handler_name = name
         self.grace_period = grace_period
         self.batch_size = batch_size
         self.max_latency = max_latency
@@ -214,6 +231,10 @@ class StreamTransport(BackgroundThreadTransport):
         return self.handler.stream
 
     @property
+    def handler(self):
+        return self.client.logger(self.handler_name)
+
+    @property
     def terminator(self):
         if not getattr(self, '_terminator', None):
             self._terminator = self.handler.terminator
@@ -224,6 +245,9 @@ class StreamTransport(BackgroundThreadTransport):
 
     def handleError(self, record):
         return self.handler.handleError(record)
+
+    def __repr__(self) -> str:
+        return '<StreamTransport {} | {}>'.format(self.destination, self.handler_name)
 
 
 class CloudParamHandler(CloudLoggingHandler):
@@ -277,6 +301,13 @@ class CloudParamHandler(CloudLoggingHandler):
         """After preparing the record data, will call the appropriate StreamTransport or BackgroundThreadTransport. """
         self.prepare_record_data(record)
         super().emit(record)
+
+    def __repr__(self) -> str:
+        if isinstance(self.transport, StreamTransport):
+            destination = self.transport.stream.name.lstrip('<').rstrip('>')
+        else:
+            destination = '-/logs/' + self.name
+        return '<CloudParamHandler {} | {}>'.format(destination, self.name)
 
 
 class CloudLog(logging.Logger):
