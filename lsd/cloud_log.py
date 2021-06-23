@@ -97,20 +97,19 @@ class LowPassFilter(logging.Filter):
     def filter(self, record):
         if record.name in self._allowed_high:
             return True
-        is_logged = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
-        if is_logged and record.levelno > self.below_level - 1:
+        name_allowed = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
+        if not name_allowed or record.levelno > self.below_level - 1:
             return False
-        # record._severity = record.levelname
         return True
 
     def __repr__(self):
         if self.name == NON_EXISTING_LOGGER_NAME:
-            return '<LowPassFilter only {}>'.format(', '.join(self._allowed_high))
+            return '<{} only {}>'.format(', '.join(self.__class__.__name__, self._allowed_high))
         name = self.name or 'All'
         allowed = ' '
         if len(self._allowed_high):
             allowed = ' and any ' + ', '.join(self._allowed_high)
-        return '<LowPassFilter only {} under {}{}>'.format(name, self.below_level, allowed)
+        return '<{} only {} under {}{}>'.format(self.__class__.__name__, name, self.below_level, allowed)
 
 
 class StreamClient:

@@ -1,6 +1,6 @@
 from flask import Flask
 import logging
-from .cloud_log import CloudLog, LowPassFilter, StreamClient, setup_cloud_logging  # , StructHandler, TempLog, CloudHandler
+from .cloud_log import CloudLog, LowPassFilter, StreamClient, setup_cloud_logging
 
 
 def create_app(config, config_overrides=dict()):
