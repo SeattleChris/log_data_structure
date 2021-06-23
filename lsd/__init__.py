@@ -6,9 +6,6 @@ from .cloud_log import CloudLog, LowPassFilter, StreamClient, setup_cloud_loggin
 def create_app(config, config_overrides=dict()):
     debug = config_overrides.get('DEBUG', getattr(config, 'DEBUG', None))
     testing = config_overrides.get('TESTING', getattr(config, 'TESTING', None))
-    # if not testing:
-        # base_log_level = logging.DEBUG if debug else logging.INFO
-        # logging.setLoggerClass(CloudLog)  # Causes app.logger to be a CloudLog instance.
     log_setup = CloudLog.basicConfig(config, debug=debug, testing=testing)
     app = Flask(__name__)
     app.config.from_object(config)
@@ -43,11 +40,10 @@ def create_app(config, config_overrides=dict()):
                     logging.exception(e)
                     log_client = logging
             if log_client == logging or isinstance(log_client, StreamClient):
-                # res = CloudLog.make_resource(config, fancy='I am')  # TODO: fix passing a created resource.
                 app_handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_level, res, log_client)
                 app.logger.addHandler(app_handler)  # name out, propagate=True
                 low_filter = LowPassFilter(app.logger.name, cloud_level)  # Do not log at this level or higher.
-                if log_client is logging:  # Hi: name out, Lo: root/stderr out; propagate=True
+                if log_client == logging:  # Hi: name out, Lo: root/stderr out; propagate=True
                     root_handler = logging.root.handlers[0]
                     root_handler.addFilter(low_filter)
                 else:  # Hi: name out, Lo: application out; propagate=False
@@ -57,7 +53,8 @@ def create_app(config, config_overrides=dict()):
                     app.logger.addHandler(low_handler)
                     app.logger.propagate = False
             alert = CloudLog(log_name, base_level, res, log_client)  # name out, propagate=True
-            # CloudLog.add_high_report(log_name)
+            if isinstance(log_client, StreamClient):
+                CloudLog.add_high_report(log_name)
             c_log = CloudLog('c_log', base_level, res, logging)  # stderr out, propagate=False
         app.log_client = log_client
         app._resource_test = res
