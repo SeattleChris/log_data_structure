@@ -449,13 +449,13 @@ class CloudLog(logging.Logger):
         root_low = logging._handlers.get('root_low', None)
         if not root_low:
             raise LookupError("Could not find expected 'root_low' handler. ")
-        targets = [filter for filter in root_low.filters if isinstance(filter, LowPassFilter) and not filter.name]
+        targets = [ea for ea in root_low.filters if isinstance(ea, LowPassFilter) and ea.title == 'stdout']
         if len(targets) > 1:
             warnings.warn("More than one possible LowPassFilter attached to 'root_low' handler. Using the first one. ")
         try:
             stdout_filter = targets[0]
         except IndexError:
-            stdout_filter = LowPassFilter(name='', level=cls.DEFAULT_HIGH_LEVEL)
+            stdout_filter = LowPassFilter(name='', level=cls.DEFAULT_HIGH_LEVEL, title='stdout')
             root_low.addFilter(stdout_filter)
             # raise KeyError("Unable to find the 'stdout_filter' on the 'root_low' handler. ")
         return stdout_filter
@@ -513,8 +513,9 @@ class CloudLog(logging.Logger):
             logging.exception(e)
             log_client = logging
         low_handler = logging.StreamHandler(stdout)
-        low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
+        low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
+        low_handler.setLevel(base_level)
         low_handler.set_name('root_low')
         high_handler = logging.StreamHandler(stderr)
         high_handler.setLevel(high_level)
@@ -876,7 +877,7 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
     log_client.setup_logging(log_level=base_log_level)  # log_level sets the logger, not the handler.
     # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
     root_handler = logging.root.handlers[0]
-    low_filter = LowPassFilter(CloudLog.APP_LOGGER_NAME, cloud_log_level)
+    low_filter = LowPassFilter(CloudLog.APP_LOGGER_NAME, cloud_log_level, 'stdout')
     root_handler.addFilter(low_filter)
     fmt = getattr(root_handler, 'formatter', None)
     if not fmt:
