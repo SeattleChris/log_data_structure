@@ -462,7 +462,7 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def add_high_report(cls, name):
-        """Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+        """DEPRECATED. Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
         stdout_filter = cls.get_stdout_filter()
         ignore_filter = cls.get_ignore_filter()
         rv = stdout_filter.add_allowed_high(name)
@@ -792,6 +792,8 @@ class CloudLog(logging.Logger):
             app.try_trigger_before_first_request_functions()
         if logger_names is not None and not logger_names:
             logger_names = getattr(app, 'log_list', [])
+        elif logger_names is None:
+            logger_names = []
         app_loggers = [(name, getattr(app, name)) for name in logger_names if hasattr(app, name)]
         print(f"Found {len(app_loggers)} named attachments. ")
         app_loggers = [ea for ea in app_loggers if ea[1] is not None]
@@ -800,7 +802,13 @@ class CloudLog(logging.Logger):
             app_loggers.insert(0, ('App_Logger', app.logger))
         if loggers:
             print(f"Investigating {len(loggers)} independent loggers. ")
-        loggers = [('root', logging.root)] + app_loggers + [(num, ea) for num, ea in enumerate(loggers)]
+        if isinstance(loggers, dict):
+            loggers = [(name, logger) for name, logger in loggers.items()]
+        elif isinstance(loggers, (list, tuple)):
+            loggers = [(num, ea) for num, ea in enumerate(loggers)]
+        else:
+            loggers = []
+        loggers = [('root', logging.root)] + app_loggers + loggers
         print(f"Total loggers: {len(loggers)} ")
         code = app.config.get('CODE_SERVICE', 'UNKNOWN')
         print(f"=================== Logger Tests & Info: {code} ===================")
@@ -817,20 +825,21 @@ class CloudLog(logging.Logger):
             if adapter:
                 print(f"-------------------------- {name} ADAPTER Settings --------------------------")
                 pprint(adapter.__dict__)
-            print(f"---------------------------- {name} Logger Settings ----------------------------")
+            print(f"---------------------------- {name} Logger {repr(logger)} ----------------------------")
             pprint(logger.__dict__)
             print(f'------------------------- Logger Calls: {name} -------------------------')
             for level in levels:
                 if hasattr(adapter or logger, level):
                     getattr(adapter or logger, level)(' - '.join((context, name, level, code)))
                 else:
-                    logging.warning("{} in {}: No {} method on logger {} ", context, code, level, name)
+                    print("{} in {}: No {} method on logger {} ".format(context, code, level, name))
         print(f"=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
         print(found_handler_str)
         creds_list = []
         resources = []
+        all_handlers = [ea for ea in all_handlers if ea and ea != 'not found']
         for num, handle in enumerate(all_handlers):
-            print(f"------------------------- {num}: {handle.name} -------------------------")
+            print(f"--------------------- {num}: {getattr(handle, 'name', None) or repr(handle)} ---------------------")
             pprint(handle.__dict__)
             temp_client = getattr(handle, 'client', object)
             temp_creds = getattr(temp_client, '_credentials', None)

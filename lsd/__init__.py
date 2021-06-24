@@ -77,8 +77,10 @@ def create_app(config, config_overrides=dict()):
         import inspect
 
         app.try_trigger_before_first_request_functions()
-        all_loggers = [getattr(app, name, None) for name in app.log_list]
-        all_loggers = [logging.root, app.logger] + [log for log in all_loggers if log]
+        logDict = logging.root.manager.loggerDict
+        all_loggers = [logger for name, logger in logDict.items()]
+        # all_loggers = [getattr(app, name, None) for name in app.log_list]
+        # all_loggers = [logging.root, app.logger] + [log for log in all_loggers if log]
         # tree = make_tree(all_loggers)
 
         return {
@@ -88,6 +90,7 @@ def create_app(config, config_overrides=dict()):
             'StreamClient': StreamClient,
             'StreamTransport': StreamTransport,
             'all_loggers': all_loggers,
+            'logDict': logDict,
             # 'LogNode': LogNode,
             # 'RootLogNode': RootLogNode,
             # 'handler_ranges': handler_ranges,
