@@ -195,9 +195,9 @@ class StreamClient:
 
 
 class StreamTransport(BackgroundThreadTransport):
-    """Allows CloudParamHandler to use StreamHandler methods when using StreamClient. """
+    """A substitute for BackgroundThreadTransport in CloudParamHandler. Use StreamHandler & StreamClient technique. """
 
-    def __init__(self, client, name, *, grace_period=0, batch_size=0, max_latency=0):
+    def __init__(self, client, name, *, grace_period=0, batch_size=0, max_latency=0):  # like BackgroundThreadTransport
         self.client = client
         self.handler_name = name
         self.grace_period = grace_period
@@ -216,7 +216,7 @@ class StreamTransport(BackgroundThreadTransport):
         return entry
 
     def send(self, record, message, **kwargs):
-        """Similar to standard library logging.StreamHandler.emit, but with a json dict of appropriate values. """
+        """Replacing Transport send with similar to logging.StreamHandler.emit with json dict output. """
         entry = self.create_entry(record, message, **kwargs)
         entry = json.dumps(entry)
         try:
