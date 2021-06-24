@@ -788,6 +788,8 @@ class CloudLog(logging.Logger):
     def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):
         """Used for testing the log setups. """
         from pprint import pprint
+        from collections import Counter
+
         if not app.got_first_request:
             app.try_trigger_before_first_request_functions()
         if logger_names is not None and not logger_names:
@@ -811,17 +813,23 @@ class CloudLog(logging.Logger):
         loggers = [('root', logging.root)] + app_loggers + loggers
         print(f"Total loggers: {len(loggers)} ")
         code = app.config.get('CODE_SERVICE', 'UNKNOWN')
-        print(f"=================== Logger Tests & Info: {code} ===================")
+        print(f"\n=================== Logger Tests & Info: {code} ===================")
         found_handler_str = ''
         all_handlers = []
         for name, logger in loggers:
             adapter = None
             if isinstance(logger, logging.LoggerAdapter):
                 adapter, logger = logger, logger.logger
-            handlers = getattr(logger, 'handlers', ['not found'])
-            if isinstance(handlers, list):
-                all_handlers.extend(handlers)
-            found_handler_str += f"{name} handlers: {', '.join([str(ea) for ea in handlers])} " + '\n'
+            handlers = getattr(logger, 'handlers', [])
+            all_handlers.extend(handlers)
+            desc = ' ADAPTER' if adapter else ''
+            if isinstance(logger, logging.PlaceHolder):
+                desc += ' PLACEHOLDER'
+            elif not handlers:
+                desc += ' None'
+            else:
+                desc += ' '
+            found_handler_str += f"{name}:{desc}{', '.join([str(ea) for ea in handlers])} " + '\n'
             if adapter:
                 print(f"-------------------------- {name} ADAPTER Settings --------------------------")
                 pprint(adapter.__dict__)
@@ -833,50 +841,76 @@ class CloudLog(logging.Logger):
                     getattr(adapter or logger, level)(' - '.join((context, name, level, code)))
                 else:
                     print("{} in {}: No {} method on logger {} ".format(context, code, level, name))
-        print(f"=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
+        print(f"\n=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
         print(found_handler_str)
-        creds_list = []
-        resources = []
+        found_clients, creds_list, resources = [], [], []
         all_handlers = [ea for ea in all_handlers if ea and ea != 'not found']
         for num, handle in enumerate(all_handlers):
             print(f"--------------------- {num}: {getattr(handle, 'name', None) or repr(handle)} ---------------------")
             pprint(handle.__dict__)
             temp_client = getattr(handle, 'client', object)
-            temp_creds = getattr(temp_client, '_credentials', None)
-            if temp_creds:
-                creds_list.append(temp_creds)
+            if isinstance(temp_client, (cloud_logging.Client, StreamClient)):
+                found_clients.append(temp_client)
+                temp_creds = getattr(temp_client, '_credentials', None)
+                if temp_creds:
+                    creds_list.append(temp_creds)
             resources.append(getattr(handle, 'resource', None))
-        print("=================== Resources found attached to the Handlers ===================")
+        print("\n=================== Resources found attached to the Handlers ===================")
         if hasattr(app, '_resource_test'):
             resources.append(app._resource_test)
         for res in resources:
             if hasattr(res, '_to_dict'):
                 pprint(res._to_dict())
             else:
-                pprint(f"Resource was: {res} ")
-        pprint("=================== App Log Client Credentials ===================")
+                print(f"Resource was: {res} ")
+        print("\n=================== App Log Client Credentials ===================")
         log_client = getattr(app, 'log_client', None)
-        if log_client is logging:
-            log_client = None
-        app_creds = log_client._credentials if log_client else None
-        if app_creds in creds_list:
-            app_creds = None
+        app_creds = None
+        if log_client is not logging:
+            app_creds = getattr(log_client, '_credentials', None)
+            if app_creds in creds_list:
+                app_creds = None
         print(f"Currently have {len(creds_list)} creds from logger clients. ")
         creds_list = [(f"client_cred_{num}", ea) for num, ea in enumerate(set(creds_list))]
-        print(f"With {len(creds_list)} unique client credentials. " + '\n')
+        print(f"With {len(creds_list)} unique client credentials. ")
         if log_client and not app_creds:
-            print("App Log Client Creds - already included in logger clients. ")
+            print("App Log Client Creds - already included in logger clients. " + '\n')
         elif app_creds:
-            print("Adding App Log Client Creds. ")
+            print("Adding App Log Client Creds. " + '\n')
             creds_list.append(('App Log Client Creds', app_creds))
         for name, creds in creds_list:
-            pprint(f"{name}: {creds} ")
-            pprint(creds.expired)
-            pprint(creds.valid)
+            print(f"{name}: {creds} ")
+            print(creds.expired)
+            print(creds.valid)
             pprint(creds.__dict__)
-            pprint("--------------------------------------------------")
+            print("--------------------------------------------------")
         if not creds_list:
             print("No credentials found to report.")
+        print("\n=================== Log Clients Discovered ===================")
+        # for num, c in enumerate(found_clients):
+        #     print(f"{num}: {c} ")
+        found_count = len(found_clients)
+        if log_client:
+            found_clients.append(log_client)
+        count = dict(Counter(found_clients))
+        count['total'] = sum(val for name, val in count.items())
+        count_diff = count['total'] - found_count
+        pprint(count)
+        message = f"Discovered {len(found_clients)} clients, "
+        if count_diff:
+            message += f"plus the {count_diff} expected client. "
+        elif log_client:
+            message += "which includes the expected client. "
+        else:
+            message += "and no attached log_client. "
+        print(message)
+        found_client = set(found_clients)
+        print(f"With {len(found_client)} unique Clients. \n")
+        for c in found_client:
+            print(repr(c))
+            print(f"Count: {count[c]} ")
+            pprint(c.__dict__)
+            print("--------------------------------------------------")
 
 
 def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, config=None, extra=None):
