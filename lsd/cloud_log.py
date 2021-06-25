@@ -70,16 +70,16 @@ class LowPassFilter(logging.Filter):
     def __init__(self, name: str, level: int, title: str = '') -> None:
         super().__init__(name=name)
         self.title = title
-        self._allowed_high = set()
+        self._allowed = set()
         level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
         self.below_level = level
         assert self.below_level > 0
 
-    def add_allowed_high(self, name):
-        """Any log records with these names are not affected by the low filter. They will always pass through. """
+    def allow(self, name):
+        """Any level log records with these names are not affected by the low filter. They will always pass through. """
         rv = None
-        if isinstance(name, (list, tuple)):
-            rv = [self.add_allowed_high(ea) for ea in name]
+        if isinstance(name, (list, tuple, set)):
+            rv = [self.allow(ea) for ea in name]
             name = None
         elif not isinstance(name, str):
             try:
@@ -89,14 +89,14 @@ class LowPassFilter(logging.Filter):
             except (AssertionError, Exception):
                 name = None
         if name and isinstance(name, str):
-            self._allowed_high.add(name)
+            self._allowed.add(name)
             rv = name
         if rv is None:
             raise TypeError("Unable to add log record name to the LowPassFilter allowed collection. ")
         return rv
 
     def filter(self, record):
-        if record.name in self._allowed_high:
+        if record.name in self._allowed:
             return True
         name_allowed = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
         if not name_allowed or record.levelno > self.below_level - 1:
@@ -104,12 +104,12 @@ class LowPassFilter(logging.Filter):
         return True
 
     def __repr__(self):
-        if self.name == NON_EXISTING_LOGGER_NAME:
-            return '<{} only {}>'.format(', '.join(self.__class__.__name__, self._allowed_high))
         name = self.name or 'All'
+        if name == NON_EXISTING_LOGGER_NAME:
+            name = 'None'
         allowed = ' '
-        if len(self._allowed_high):
-            allowed = ' and any ' + ', '.join(self._allowed_high)
+        if len(self._allowed):
+            allowed = ' and any ' + ', '.join(self._allowed)
         return '<{} only {} under {}{}>'.format(self.__class__.__name__, name, self.below_level, allowed)
 
 
@@ -498,11 +498,11 @@ class CloudLog(logging.Logger):
         return stdout_filter
 
     @classmethod
-    def add_high_report(cls, name):
-        """DEPRECATED. Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+    def add_report_log(cls, name):
+        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
         stdout_filter = cls.get_stdout_filter()
         ignore_filter = cls.get_ignore_filter()
-        rv = stdout_filter.add_allowed_high(name)
+        rv = stdout_filter.allow(name)
         if isinstance(rv, str):
             rv = [rv]
         if isinstance(rv, list):
