@@ -398,10 +398,20 @@ class CloudLog(logging.Logger):
         'pubsub_topic': ['project_id', 'topic_id'],
         'reported_errors': ['project_id'],
         }
-    RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'parent', 'res_type', 'cred_or_path')
+    RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
     CLIENT_KW = ('project', 'credentials', 'client_info', 'client_options')  # also: '_http', '_use_grpc'
 
-    def __init__(self, name=None, level=None, resource=None, client=None, replace=False, **kwargs):
+    def __init__(self, name=None, level=None, automate=False, **kwargs):
+        name = self.normalize_logger_name(name)
+        level = self.normalize_level(level)
+        super().__init__(name, level=level)
+        if automate:
+            self.automated_structure(**kwargs)
+
+    def automated_structure(self, resource=None, client=None, replace=False, **kwargs):
+        """Typically only used for the core logers of the main code. This will add resource, labels, client, etc. """
+        # After cleaning out special key-words, the remaining kwargs are used for creating Resource and labels.
+        name = self.name
         stream = kwargs.pop('stream', None)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
@@ -409,21 +419,23 @@ class CloudLog(logging.Logger):
         handle_name = kwargs.pop('handler_name', default_handle_name)
         handle_level = kwargs.pop('handler_level', None)
         parent = kwargs.pop('parent', logging.root)
-        # 'res_type' is passed through to Resource constructor
+        self.parent = self.normalize_parent(parent, name)
         cred_or_path = kwargs.pop('cred_or_path', None)
         if client and cred_or_path:
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
-        name = self.normalize_logger_name(name)
-        level = self.normalize_level(level)
-        super().__init__(name, level=level)
+        labels = getattr(logging.root, '_config_labels', {})
+        labels.update(kwargs.pop('labels', None) or kwargs)
         if resource is None:
             resource = getattr(logging.root, '_config_resource', None)
             resource = Resource._from_dict(resource)
-        if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
-            resource = self.make_resource(resource, **kwargs)
-        self.labels = getattr(resource, 'labels', self.get_environment_labels())
+        if isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
+            labels = {**resource.labels, **labels}
+        else:
+            resource = self.make_resource(resource, res_type, **labels)
+            labels = getattr(resource, 'labels', **self.get_environment_labels(), **labels)
+        self.labels = labels
         self.resource = resource._to_dict()
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
@@ -436,7 +448,6 @@ class CloudLog(logging.Logger):
         self.client = client  # accessing self.project may, on edge cases, set self.client
         handler = self.make_handler(handle_name, handle_level, resource, client, fmt=fmt, stream=stream, **self.labels)
         self.addHandler(handler)
-        self.parent = self.normalize_parent(parent, name)
         self.add_loggerDict(replace)
 
     def add_loggerDict(self, replace=False):
