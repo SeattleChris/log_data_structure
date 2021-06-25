@@ -418,6 +418,7 @@ class CloudLog(logging.Logger):
         default_handle_name = default_handle_name or name
         handle_name = kwargs.pop('handler_name', default_handle_name)
         handle_level = kwargs.pop('handler_level', None)
+        res_type = kwargs.pop('res_type', self.DEFAULT_RESOURCE_TYPE)
         parent = kwargs.pop('parent', logging.root)
         self.parent = self.normalize_parent(parent, name)
         cred_or_path = kwargs.pop('cred_or_path', None)
@@ -536,7 +537,7 @@ class CloudLog(logging.Logger):
         labels = kwargs.pop('labels', None) or kwargs.copy()
         if not isinstance(resource, Resource):
             resource.update(labels)
-            resource = cls.make_resource(config, **resource)
+            resource = cls.make_resource(config, res_type, **resource)
         labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
         client_kwargs = {k: v for k, v in labels.items() if k in cls.CLIENT_KW}  # such as 'project'
         client_kwargs.update(client_overrides)
@@ -720,12 +721,12 @@ class CloudLog(logging.Logger):
         return config
 
     @classmethod
-    def make_resource(cls, config, **kwargs):
+    def make_resource(cls, config, res_type=None, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
         config = cls.config_as_dict(config)
         labels = cls.get_environment_labels(config)
         labels.update(kwargs)
-        res_type, labels = cls.get_resource_fields(labels)
+        res_type, labels = cls.get_resource_fields(res_type=res_type, **labels)
         return Resource(res_type, labels)
 
     @classmethod
@@ -968,7 +969,7 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
     if not fmt:
         fmt = DEFAULT_FORMAT
         root_handler.setFormatter(fmt)
-    resource = CloudLog.make_resource(config)
+    resource = CloudLog.make_resource(config, CloudLog.DEFAULT_RESOURCE_TYPE)
     handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_log_level, resource, log_client, fmt=fmt)
     logging.root.addHandler(handler)
     if extra is None:
