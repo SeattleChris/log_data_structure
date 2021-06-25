@@ -404,10 +404,12 @@ class CloudLog(logging.Logger):
         self.resource = resource._to_dict()
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
-        if client is logging:
+        client = self.make_client(client, **client_kwargs, **labels)
+        if isinstance(client, StreamClient):
+            client.update_attachments(resource, labels, handle_name)
             self.propagate = False
-        else:    # client may be None, a cloud_logging.Client, a credential object or path.
-            client = self.make_client(client, **client_kwargs, **self.labels)
+        elif isinstance(client, cloud_logging.Client):  # Most likely expeected outcome.
+            self.add_report_log(name)
         self.client = client  # accessing self.project may, on edge cases, set self.client
         handler = self.make_handler(handle_name, handle_level, resource, client, fmt=fmt, stream=stream, **self.labels)
         self.addHandler(handler)
@@ -504,27 +506,25 @@ class CloudLog(logging.Logger):
         labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
         client_kwargs = {k: v for k, v in labels.items() if k in cls.CLIENT_KW}  # such as 'project'
         client_kwargs.update(client_overrides)
-        project = kwargs.pop('project', None) or kwargs.pop('project_id', None)
-        if project and 'project' not in client_kwargs:
-            client_kwargs['project'] = project
-        try:
-            log_client = CloudLog.make_client(cred_path, **client_kwargs)
-        except Exception as e:
-            logging.exception(e)
-            log_client = logging
-        low_handler = logging.StreamHandler(stdout)
-        low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
-        low_handler.addFilter(low_filter)
-        low_handler.setLevel(base_level)
-        low_handler.set_name('root_low')
-        high_handler = logging.StreamHandler(stderr)
-        high_handler.setLevel(high_level)
-        high_handler.set_name('root_high')
-        root_handlers.extend((low_handler, high_handler))
+        log_client = cls.make_client(cred_path, **client_kwargs)
+        app_handler_name = None
+        if isinstance(log_client, cloud_logging.Client):
+            report_names = set()
+            for name in log_names:
+                handler_name = None
+                if isinstance(name, tuple):
+                    name, handler_name = name
+                name = cls.normalize_logger_name(name)
+                handler_name = cls.normalize_handler_name(handler_name or name)
+                if name == cls.APP_LOGGER_NAME:
+                    app_handler_name = handler_name
+                report_names.add(name)
+                report_names.add(handler_name)
+            cls.add_report_log(report_names)
+        else:  # isinstance(log_client, StreamClient):
+            log_client.update_attachments(resource, labels, app_handler_name)
         kwargs['handlers'] = root_handlers
         kwargs['level'] = base_level
-        if log_client is not logging:
-            cls.add_high_report([name, handler_name])
         try:
             logging.basicConfig(**kwargs)
             root = logging.root
@@ -614,7 +614,7 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_client(cls, cred_or_path=None, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)) or cred_or_path == logging:
+        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
             return cred_or_path
         client_kwargs = {key: kwargs[key] for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
         if isinstance(cred_or_path, service_account.Credentials):
@@ -625,7 +625,15 @@ class CloudLog(logging.Logger):
         else:
             credentials = None
         client_kwargs.setdefault('credentials', credentials)
-        log_client = cloud_logging.Client(**client_kwargs)
+        log_client = None
+        if cred_or_path != logging:
+            try:
+                log_client = cloud_logging.Client(**client_kwargs)
+            except Exception as e:
+                logging.exception(e)
+                log_client = None
+        if not log_client:
+            log_client = StreamClient(**kwargs, **client_kwargs)
         return log_client
 
     @classmethod
