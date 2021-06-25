@@ -527,12 +527,12 @@ class CloudLog(logging.Logger):
         if high_level < base_level:
             raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
         root_handlers = kwargs.pop('handlers', [])
-        name = kwargs.pop('name', cls.APP_LOGGER_NAME)
-        default_handle_name = cls.APP_HANDLER_NAME if name == cls.APP_LOGGER_NAME else cls.DEFAULT_HANDLER_NAME
-        handler_name = kwargs.pop('handler_name', default_handle_name)
-        name = cls.normalize_logger_name(name)
-        handler_name = cls.normalize_handler_name(handler_name)
-        client_overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW[1:] if key in kwargs}  # except for 'project'
+        root_handlers = cls.root_high_low_handlers(base_level, high_level, root_handlers)
+        log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
+        client_overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
+        if 'project' in kwargs:  # keep in kwargs, but put in client_overrides
+            client_overrides['project'] = kwargs['project']
+        res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
         resource = kwargs.pop('resource', None) or {}
         labels = kwargs.pop('labels', None) or kwargs.copy()
         if not isinstance(resource, Resource):
@@ -576,6 +576,19 @@ class CloudLog(logging.Logger):
         cloud_config = {'log_client': log_client, 'name': name, 'base_level': base_level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
+
+    @classmethod
+    def root_high_low_handlers(cls, base_level, high_level, handlers=[]):
+        """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
+        low_handler = logging.StreamHandler(stdout)
+        low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
+        low_handler.addFilter(low_filter)
+        low_handler.setLevel(base_level)
+        low_handler.set_name('root_low')
+        high_handler = logging.StreamHandler(stderr)
+        high_handler.setLevel(high_level)
+        high_handler.set_name('root_high')
+        return [low_handler, high_handler, *handlers]
 
     @classmethod
     def getLogger(cls, name):
