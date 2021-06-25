@@ -115,14 +115,32 @@ class LowPassFilter(logging.Filter):
 
 class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
+    BASE_CLIENT_PARAMETERS = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
 
-    def __init__(self, name, labels=None, resource=None, project=None, handler=None):
+    def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
+        base_params = {name: kwargs.pop(name, None) for name in self.BASE_CLIENT_PARAMETERS}
+        for key in ('client_info', 'client_options'):
+            base_params['_' + key] = base_params.pop(key)
+        for key, val in base_params.items():
+            setattr(self, key, val)
+        # assert kwargs == {}
         self.handler_name = name.lower()
-        self._project = project or ''
-        self._labels = labels if isinstance(labels, dict) else {}
-        # self.labels = labels if isinstance(labels, dict) else {'project_id': project}
-        self.resource = resource
-        self.handler = self.prepare_handler(handler)
+        self.resource = resource or {}
+        self.labels = labels or {}
+        self._handler = None
+        if handler:
+            self.handler = handler
+
+    def update_attachments(self, resource=None, labels=None, handler=None):
+        """Helpful since the order matters. These may be added to the StreamClient later to assist in management. """
+        if isinstance(resource, Resource):
+            self.resource = resource
+        if isinstance(labels, dict):
+            self.labels = labels
+        if isinstance(handler, str):
+            self.handler_name = handler.lower()
+        elif handler:
+            self.handler = handler
 
     def prepare_handler(self, handler_param):
         """Creates or updates a logging.Handler with the correct name and attaches the labels and resource. """
@@ -136,7 +154,7 @@ class StreamClient:
             except Exception as e:
                 logging.exception(e)
                 raise ValueError("StreamClient handler must be a stream (like stdout) or a Handler class or instance. ")
-        handler.set_name(self.handler_name)
+            handler.set_name(self.handler_name)
         handler.labels = self.labels
         handler.resource = self.resource
         return handler
@@ -151,10 +169,11 @@ class StreamClient:
         return rv
 
     @handler.setter
-    def handler(self, handle):
-        name = getattr(handle, 'name', None)
+    def handler(self, handler_param):
+        handler = self.prepare_handler(handler_param)
+        name = getattr(handler, 'name', None)
         if not name or name not in logging._handlers:
-            self._handler = handle
+            self._handler = handler
         else:
             self._handler = None  # Forces a lookup on logging._handlers, or creation if not present.
 
@@ -184,6 +203,13 @@ class StreamClient:
             labels['project_id'] = project or self._project
             self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
         return self._labels
+
+    @labels.setter
+    def labels(self, labels):
+        if not isinstance(labels, dict):
+            raise TypeError("Expected a dict input for labels. ")
+        res_labels = self.resource.get('labels', {})
+        self._labels = labels = {**res_labels, **labels}
 
     def logger(self, name):
         """Similar interface of google.cloud.logging.Client, but returns standard library logging.Handler instance. """
@@ -270,6 +296,7 @@ class CloudParamHandler(CloudLoggingHandler):
             client = StreamClient(name, labels, resource, handler=stream)
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
+        # on self: name, transport(client, name), client, project_id, resource, labels; adds a CloudLoggingFilter
         self.ignore = ignore  # self._data_keys = self.get_data_keys(ignore)
 
     def get_data_keys(self, ignore=None, ignore_str_keys=True):
@@ -312,10 +339,6 @@ class CloudParamHandler(CloudLoggingHandler):
         """After preparing the record data, will call the appropriate StreamTransport or BackgroundThreadTransport. """
         self.prepare_record_data(record)
         super().emit(record)
-
-    @property
-    def project(self):
-        self.client.project
 
     @property
     def destination(self):
