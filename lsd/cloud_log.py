@@ -292,8 +292,8 @@ class CloudParamHandler(CloudLoggingHandler):
                    '_span_id_str', '_http_request_str', '_source_location_str', '_labels_str', '_msg_str')
 
     def __init__(self, client, name='param_handler', resource=None, labels=None, stream=None, ignore=None):
-        if client in (None, logging):
-            client = StreamClient(name, labels, resource, handler=stream)
+        if not isinstance(client, (StreamClient, cloud_logging.Client)):
+            raise ValueError("Expected a StreamClient or cloud logging Client. ")
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
         # on self: name, transport(client, name), client, project_id, resource, labels; adds a CloudLoggingFilter
