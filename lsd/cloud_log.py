@@ -819,12 +819,19 @@ class CloudLog(logging.Logger):
         return
 
     @staticmethod
-    def get_named_handler(logger=logging.root, name="python"):
+    def get_named_handler(name="python", logger=logging.root):
         """Returns the CloudLoggingHandler with the matching name attached to the provided logger. """
-        handlers = getattr(logger, 'handlers', [])
-        for handle in handlers:
-            if isinstance(handle, CloudLoggingHandler) and handle.name == name:
-                return handle
+        try:
+            handle = logging._handlers.get(name)
+            return handle
+        except Exception as e:
+            logging.exception(e)
+            while logger:
+                handlers = getattr(logger, 'handlers', [])
+                for handle in handlers:
+                    if handle.name == name:
+                        return handle
+                logger = logger.parent
         return None
 
     @classmethod
