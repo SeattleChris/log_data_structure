@@ -672,9 +672,9 @@ class CloudLog(logging.Logger):
         return log_client
 
     @classmethod
-    def get_resource_fields(cls, settings):
+    def get_resource_fields(cls, res_type=None, **settings):
         """For a given resource type, extract the expected required fields from the kwargs passed and project_id. """
-        res_type = settings.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
+        res_type = res_type or cls.DEFAULT_RESOURCE_TYPE
         project_id = settings.pop('project_id', None) or settings.pop('project', None)
         if not project_id:
             project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
