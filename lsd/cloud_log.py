@@ -492,9 +492,9 @@ class CloudLog(logging.Logger):
         try:
             stdout_filter = targets[0]
         except IndexError:
-            stdout_filter = LowPassFilter(name='', level=cls.DEFAULT_HIGH_LEVEL, title='stdout')
+            high_level = getattr(logging.root, '_config_high_level', cls.DEFAULT_HIGH_LEVEL)
+            stdout_filter = LowPassFilter(name='', level=high_level, title='stdout')
             root_low.addFilter(stdout_filter)
-            # raise KeyError("Unable to find the 'stdout_filter' on the 'root_low' handler. ")
         return stdout_filter
 
     @classmethod
