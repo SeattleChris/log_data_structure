@@ -638,10 +638,13 @@ class CloudLog(logging.Logger):
     @classmethod
     def normalize_handler_name(cls, name=None):
         """Returns a lowercase name based on the given input or default value. """
-        if not name or not isinstance(name, str):
+        error_message = f"Either a handler name, or a default name, string must be provided. {name} did not work. "
+        if name == cls.APP_LOGGER_NAME:
+            name = cls.APP_HANDLER_NAME
+        elif not name or not isinstance(name, str):
             name = cls.DEFAULT_HANDLER_NAME
         if not name:
-            raise TypeError(f"Either a handler name, or a default name, string must be provided. {name} did not work. ")
+            raise TypeError(error_message)
         return name.lower()
 
     @classmethod
