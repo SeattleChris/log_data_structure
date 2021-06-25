@@ -765,33 +765,31 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
-        """Creates a cloud logging handler, or a standard library StreamHandler if log_client is logging. """
+        """The handler uses cloud logging output, or standard library stream, depending on the given client. """
+        name = cls.normalize_handler_name(name)
         stream = kwargs.pop('stream', None)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        cred_or_path = kwargs.pop('cred_or_path', None)
-        labels = getattr(logging.root, '_config_labels', {})
-        labels.update(kwargs.pop('labels', {}))
+        if client is None:
+            client = getattr(logging.root, '_config_log_client', None)
+        if not client:
+            raise TypeError("Expected a Client instance, or an already attached Client. ")
         if res is None:
             res = getattr(logging.root, '_config_resource', None)
             res = Resource._from_dict(res) if isinstance(res, dict) else res
-        if not isinstance(res, Resource):  # res may be None, a Config obj, or a dict.
-            res = cls.make_resource(res, **kwargs)
-        labels.update(getattr(res, 'labels', {}))
+        labels = kwargs.pop('labels', None)
+        if not labels:
+            labels = getattr(logging.root, '_config_labels', {})
+        if isinstance(res, Resource):
+            labels.update(res.get('labels', {}))
         if not labels:
             labels = cls.get_environment_labels()
         labels.update(kwargs)
-        name = cls.normalize_handler_name(name)
         handler_kwargs = {'name': name, 'labels': labels}
         if res:
             handler_kwargs['resource'] = res
         if stream:
             handler_kwargs['stream'] = stream
-        if client is None:
-            client = getattr(logging.root, '_config_log_client', None)
-        if client is not logging:
-            client = client or cred_or_path
-            client = cls.make_client(client, **labels)
-        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler if client, else StreamHandler.
+        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler, or stream if StreamClient.
         if level:
             level = cls.normalize_level(level)
             handler.setLevel(level)
