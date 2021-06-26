@@ -527,7 +527,7 @@ class CloudLog(logging.Logger):
         if high_level < base_level:
             raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
         root_handlers = kwargs.pop('handlers', [])
-        root_handlers = cls.root_high_low_handlers(base_level, high_level, root_handlers)
+        root_handlers = cls.high_low_split_handlers(base_level, high_level, root_handlers)
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
@@ -566,7 +566,7 @@ class CloudLog(logging.Logger):
         return cloud_config
 
     @classmethod
-    def root_high_low_handlers(cls, base_level, high_level, handlers=[]):
+    def high_low_split_handlers(cls, base_level, high_level, handlers=[]):
         """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
