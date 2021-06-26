@@ -531,18 +531,8 @@ class CloudLog(logging.Logger):
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
+        report_names, app_handler_name = cls.process_names(log_names)
         if isinstance(log_client, cloud_logging.Client):
-            report_names = set()
-            for name in log_names:
-                handler_name = None
-                if isinstance(name, tuple):
-                    name, handler_name = name
-                name = cls.normalize_logger_name(name)
-                handler_name = cls.normalize_handler_name(handler_name or name)
-                if name == cls.APP_LOGGER_NAME:
-                    app_handler_name = handler_name
-                report_names.add(name)
-                report_names.add(handler_name)
             cls.add_report_log(report_names)
         else:  # isinstance(log_client, StreamClient):
             log_client.update_attachments(resource, labels, app_handler_name)
@@ -564,6 +554,23 @@ class CloudLog(logging.Logger):
         cloud_config = {'log_client': log_client, 'name': name, 'base_level': base_level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
+
+    @classmethod
+    def process_names(cls, log_names):
+        """Returns report_names and app_handler_name from a list of names or list of (name, handler_name) tuples. """
+        app_handler_name = None
+        report_names = set()
+        for name in log_names:
+            handler_name = None
+            if isinstance(name, tuple):
+                name, handler_name = name
+            name = cls.normalize_logger_name(name)
+            handler_name = cls.normalize_handler_name(handler_name or name)
+            if name == cls.APP_LOGGER_NAME:
+                app_handler_name = handler_name
+            report_names.add(name)
+            report_names.add(handler_name)
+        return report_names, app_handler_name
 
     @classmethod
     def high_low_split_handlers(cls, base_level, high_level, handlers=[]):
