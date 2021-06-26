@@ -705,6 +705,8 @@ class CloudLog(logging.Logger):
                 log_client = None
         if not log_client:
             log_client = StreamClient(**kwargs, **client_kwargs)
+        if isinstance(log_client, StreamClient) and any(resource, labels):
+            log_client.update_attachments(resource, labels)
         return log_client
 
     @classmethod
