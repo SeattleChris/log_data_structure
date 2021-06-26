@@ -544,14 +544,13 @@ class CloudLog(logging.Logger):
             root._config_resource = resource._to_dict()
             root._config_lables = labels
             root._config_log_client = log_client
-            root._config_name = name
             root._config_base_level = base_level
             root._config_high_level = high_level
         except Exception as e:
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
             return False
-        cloud_config = {'log_client': log_client, 'name': name, 'base_level': base_level, 'high_level': high_level}
+        cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
