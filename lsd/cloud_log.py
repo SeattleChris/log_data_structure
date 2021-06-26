@@ -157,6 +157,14 @@ class StreamClient:
             handler.set_name(self.handler_name)
         handler.labels = self.labels
         handler.resource = self.resource
+        if not getattr(handler, 'project', None):  # Either doesn't have the attr, or set to None.
+            if not hasattr(handler, 'project'):
+                attr = 'project'
+            elif hasattr(handler, '_project'):
+                attr = '_project'
+            setattr(handler, attr, self.project)
+        if not hasattr(handler, 'full_name'):
+            handler.full_name = f"projects/{handler.project}/logs/{handler.name}"
         return handler
 
     @property
