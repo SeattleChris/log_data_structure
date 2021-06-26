@@ -529,20 +529,8 @@ class CloudLog(logging.Logger):
         root_handlers = kwargs.pop('handlers', [])
         root_handlers = cls.root_high_low_handlers(base_level, high_level, root_handlers)
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
-        client_overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
-        if 'project' in kwargs:  # keep in kwargs, but put in client_overrides
-            client_overrides['project'] = kwargs['project']
-        res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
-        resource = kwargs.pop('resource', None) or {}
-        labels = kwargs.pop('labels', None) or kwargs.copy()
-        if not isinstance(resource, Resource):
-            resource.update(labels)
-            resource = cls.make_resource(config, res_type, **resource)
-        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
-        client_kwargs = {k: v for k, v in labels.items() if k in cls.CLIENT_KW}  # such as 'project'
-        client_kwargs.update(client_overrides)
-        log_client = cls.make_client(cred_path, **client_kwargs)
-        app_handler_name = None
+        resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
+        log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
         if isinstance(log_client, cloud_logging.Client):
             report_names = set()
             for name in log_names:
@@ -663,11 +651,43 @@ class CloudLog(logging.Logger):
         return parent
 
     @classmethod
-    def make_client(cls, cred_or_path=None, **kwargs):
+    def prepare_res_label(cls, check_global=True, **kwargs):
+        """Will start with resource & labels in kwargs or found globally. Returns Resource, Labels, kwargs. """
+        config = kwargs.pop('config', environ)
+        res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
+        resource = kwargs.pop('resource', None)
+        label_overrides = kwargs.pop('labels', None)
+        if check_global:
+            resource = resource or getattr(logging.root, '_config_resource', {})
+            label_overrides = label_overrides or getattr(logging.root, '_config_labels', {})
+        else:
+            resource = resource or {}
+            label_overrides = label_overrides or {}
+        if resource and isinstance(resource, dict):
+            resource = Resource._from_dict(resource)
+        labels = resource.get('labels', {})
+        labels.update(kwargs)
+        labels.update(label_overrides)
+        if not isinstance(resource, Resource):
+            resource.update(labels)
+            resource = cls.make_resource(config, res_type, **resource)
+        labels = resource.get('labels', {**cls.get_environment_labels(), **labels})
+        labels.update(label_overrides)
+        return resource, labels, kwargs
+
+    @classmethod
+    def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
         if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
             return cred_or_path
-        client_kwargs = {key: kwargs[key] for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
+        if res_label is False:
+            check_global = False
+        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
+        if 'project' in kwargs:
+            client_kwargs['project'] = kwargs['project']
+        resource, labels = None, None
+        if res_label:
+            resource, labels, kwargs = cls.prepare_res_label(check_global, **kwargs)
         if isinstance(cred_or_path, service_account.Credentials):
             credentials = cred_or_path
         elif cred_or_path:
