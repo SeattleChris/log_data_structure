@@ -6,7 +6,8 @@ from .cloud_log import CloudLog, LowPassFilter, StreamClient, setup_cloud_loggin
 def create_app(config, config_overrides=dict()):
     debug = config_overrides.get('DEBUG', getattr(config, 'DEBUG', None))
     testing = config_overrides.get('TESTING', getattr(config, 'TESTING', None))
-    log_setup = CloudLog.basicConfig(config, debug=debug, testing=testing)
+    log_names = [__name__, 'alert', 'c_log']
+    log_setup = CloudLog.basicConfig(config, debug=debug, testing=testing, log_names=log_names)
     app = Flask(__name__)
     app.config.from_object(config)
     if config_overrides:
@@ -14,6 +15,7 @@ def create_app(config, config_overrides=dict()):
     app.debug = debug
     app.testing = testing
     app._log_setup = log_setup
+    app.log_list = log_names[1:]
 
     @app.before_first_request
     def attach_cloud_loggers():
