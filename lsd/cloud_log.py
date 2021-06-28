@@ -580,16 +580,16 @@ class CloudLog(logging.Logger):
         return report_names, app_handler_name
 
     @classmethod
-    def high_low_split_handlers(cls, base_level, high_level, handlers=[]):
+    def high_low_split_handlers(cls, base_level, high_level, handlers=[], low_name='root_low', high_name='root_high'):
         """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
         low_handler.setLevel(base_level)
-        low_handler.set_name('root_low')
+        low_handler.set_name(low_name)
         high_handler = logging.StreamHandler(stderr)
         high_handler.setLevel(high_level)
-        high_handler.set_name('root_high')
+        high_handler.set_name(high_name)
         return [low_handler, high_handler, *handlers]
 
     @classmethod
