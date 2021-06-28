@@ -602,7 +602,7 @@ class CloudLog(logging.Logger):
         if not getattr(self, '_project', None):
             project = self.labels.get('project', None) or self.labels.get('project_id', None)
             if not project and self.resource:
-                project = self.resource.get('labels', {})
+                project = getattr(self.resource, 'labels', {})
                 project = project.get('project_id') or project.get('project')
             if not project and isinstance(self.client, cloud_logging.Client):
                 project = self.client.project
@@ -734,9 +734,8 @@ class CloudLog(logging.Logger):
         return log_client
 
     @classmethod
-    def get_resource_fields(cls, res_type=None, **settings):
+    def get_resource_fields(cls, res_type=DEFAULT_RESOURCE_TYPE, **settings):
         """For a given resource type, extract the expected required fields from the kwargs passed and project_id. """
-        res_type = res_type or cls.DEFAULT_RESOURCE_TYPE
         project_id = settings.pop('project_id', None) or settings.pop('project', None)
         if not project_id:
             project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
@@ -783,7 +782,7 @@ class CloudLog(logging.Logger):
         return config
 
     @classmethod
-    def make_resource(cls, config, res_type=None, **kwargs):
+    def make_resource(cls, config, res_type=DEFAULT_RESOURCE_TYPE, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
         config = cls.config_as_dict(config)
         labels = cls.get_environment_labels(config)
