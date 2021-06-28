@@ -420,7 +420,7 @@ class CloudLog(logging.Logger):
         """Typically only used for the core logers of the main code. This will add resource, labels, client, etc. """
         # After cleaning out special key-words, the remaining kwargs are used for creating Resource and labels.
         name = self.name
-        stream = kwargs.pop('stream', None)
+        stream = self.clean_stream(kwargs.pop('stream', None))
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
         default_handle_name = default_handle_name or name
@@ -663,6 +663,16 @@ class CloudLog(logging.Logger):
         elif not isinstance(parent, logging.Logger):
             raise TypeError("The 'parent' value must be a string, a logger, or None. ")
         return parent
+
+    @classmethod
+    def clean_stream(cls, stream):
+        """If given a string of 'stdout' or 'stderr', returns appropriate sys stream. Otherwise returns input. """
+        if isinstance(stream, str):
+            if stream == 'stdout':
+                stream = stdout
+            elif stream == 'stderr':
+                stream = stderr
+        return stream
 
     @classmethod
     def prepare_res_label(cls, check_global=True, **kwargs):
