@@ -119,7 +119,7 @@ class StreamClient:
 
     def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
         base_params = {name: kwargs.pop(name, None) for name in self.BASE_CLIENT_PARAMETERS}
-        for key in ('client_info', 'client_options'):
+        for key in ('project', 'client_info', 'client_options'):
             base_params['_' + key] = base_params.pop(key)
         for key, val in base_params.items():
             setattr(self, key, val)
@@ -348,6 +348,10 @@ class CloudParamHandler(CloudLoggingHandler):
         self.prepare_record_data(record)
         super().emit(record)
 
+    # @property
+    # def project(self):
+    #     self.client.project
+
     @property
     def destination(self):
         """Keeps a hidden str property that is a cache of previously computed value. """
@@ -413,6 +417,8 @@ class CloudLog(logging.Logger):
         name = self.normalize_logger_name(name)
         level = self.normalize_level(level)
         super().__init__(name, level=level)
+        # if name == self.DEFAULT_LOGGER_NAME:
+        #     automate = True
         if automate:
             self.automated_structure(**kwargs)
 
@@ -547,7 +553,7 @@ class CloudLog(logging.Logger):
         kwargs['handlers'] = root_handlers
         kwargs['level'] = base_level
         try:
-            logging.basicConfig(**kwargs)
+            logging.basicConfig(**kwargs)  # logging.root, or any loggers should not have been accessed yet.
             root = logging.root
             root._config_resource = resource._to_dict()
             root._config_lables = labels
@@ -763,7 +769,7 @@ class CloudLog(logging.Logger):
         labels = {
             'gae_env': config.get('GAE_ENV'),
             'project': project,
-            'project_id': project,
+            'project_id': project_id,
             'service': config.get('GAE_SERVICE'),
             'module_id': config.get('GAE_SERVICE'),
             'code_service': config.get('CODE_SERVICE'),  # Either local or GAE_SERVICE value
@@ -921,7 +927,7 @@ class CloudLog(logging.Logger):
         app_loggers = [ea for ea in app_loggers if ea[1] is not None]
         print(f"Expected {len(logger_names)} and found {len(app_loggers)} named loggers. ")
         if hasattr(app, 'logger'):
-            app_loggers.insert(0, ('App_Logger', app.logger))
+            app_loggers.insert(0, ('app.logger', app.logger))
         if loggers:
             print(f"Investigating {len(loggers)} independent loggers. ")
         if isinstance(loggers, dict):
@@ -1015,7 +1021,6 @@ class CloudLog(logging.Logger):
         count = dict(Counter(found_clients))
         count['total'] = sum(val for name, val in count.items())
         count_diff = count['total'] - found_count
-        pprint(count)
         message = f"Discovered {len(found_clients)} clients, "
         if count_diff:
             message += f"plus the {count_diff} expected client. "
