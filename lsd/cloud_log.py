@@ -204,7 +204,7 @@ class StreamClient:
         labels_have_valid_data = bool(self._labels.get('project_id', None))
         if not labels_have_valid_data:
             try:
-                labels = self.resource.get('labels', {}).copy()
+                labels = getattr(self.resource, 'labels', {}).copy()
             except Exception:
                 labels = {}
             project = labels.get('project_id') or labels.get('project')
@@ -216,7 +216,7 @@ class StreamClient:
     def labels(self, labels):
         if not isinstance(labels, dict):
             raise TypeError("Expected a dict input for labels. ")
-        res_labels = self.resource.get('labels', {})
+        res_labels = getattr(self.resource, 'labels', {})
         self._labels = labels = {**res_labels, **labels}
 
     def logger(self, name):
@@ -689,13 +689,13 @@ class CloudLog(logging.Logger):
             label_overrides = label_overrides or {}
         if resource and isinstance(resource, dict):
             resource = Resource._from_dict(resource)
-        labels = resource.get('labels', {})
+        labels = getattr(resource, 'labels', {})
         labels.update(kwargs)
         labels.update(label_overrides)
         if not isinstance(resource, Resource):
             resource.update(labels)
             resource = cls.make_resource(config, res_type, **resource)
-        labels = resource.get('labels', {**cls.get_environment_labels(), **labels})
+        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
         labels.update(label_overrides)
         return resource, labels, kwargs
 
@@ -787,7 +787,9 @@ class CloudLog(logging.Logger):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
         config = cls.config_as_dict(config)
         labels = cls.get_environment_labels(config)
+        label_overrides = kwargs.pop('labels', {})
         labels.update(kwargs)
+        labels.update(label_overrides)
         res_type, labels = cls.get_resource_fields(res_type=res_type, **labels)
         return Resource(res_type, labels)
 
