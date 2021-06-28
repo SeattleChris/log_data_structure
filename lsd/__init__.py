@@ -1,6 +1,7 @@
 from flask import Flask
 import logging
 from .cloud_log import CloudLog, LowPassFilter, StreamClient, setup_cloud_logging
+from google.cloud import logging as cloud_logging
 
 
 def create_app(config, config_overrides=dict()):
@@ -28,36 +29,52 @@ def create_app(config, config_overrides=dict()):
         cloud_level = log_setup.get('high_level', logging.WARNING)
         log_client = log_setup.get('log_client', None)
         res = log_setup.get('resource', None)
+        labels = log_setup.get('labels', {})
+        if isinstance(res, dict):
+            try:
+                res = cloud_logging.Resource._from_dict(res)
+            except Exception as e:
+                logging.exception(e)
+                labels = {**res, **labels}
+                res = None
+        if not res:
+            res = CloudLog.make_resource(config, **labels)
+            labels = {**res.labels, **labels}
         log_name = 'alert'
         app_handler, alert, c_log = None, None, None
         if testing:
             pass
         elif not config.standard_env:
             log_client, alert, *skip = setup_cloud_logging(cred_path, base_level, cloud_level, config, log_name)
+        elif isinstance(log_client, (cloud_logging.Client, StreamClient)):
+            alert = CloudLog(log_name, base_level, automate=True, resource=res, client=log_client)
+            alert.propagate = isinstance(log_client, cloud_logging.Client)
         else:
-            if not log_client:
-                try:
-                    log_client = CloudLog.make_client(cred_path)
-                except Exception as e:
-                    logging.exception(e)
-                    log_client = logging
-            if log_client == logging or isinstance(log_client, StreamClient):
-                app_handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_level, res, log_client)
-                app.logger.addHandler(app_handler)  # name out, propagate=True
-                low_filter = LowPassFilter(app.logger.name, cloud_level)  # Do not log at this level or higher.
-                if log_client == logging:  # Hi: name out, Lo: root/stderr out; propagate=True
-                    root_handler = logging.root.handlers[0]
-                    root_handler.addFilter(low_filter)
-                else:  # Hi: name out, Lo: application out; propagate=False
-                    low_name = CloudLog.APP_HANDLER_NAME + '_low'
-                    low_handler = CloudLog.make_handler(low_name, base_level, res, log_client)
-                    low_handler.addFilter(low_filter)
-                    app.logger.addHandler(low_handler)
-                    app.logger.propagate = False
-            alert = CloudLog(log_name, base_level, res, log_client)  # name out, propagate=True
+            log_client = CloudLog.make_client(cred_path, resource=res, labels=labels, config=config)
+            # log_names = [__name__] + getattr(app, 'log_list', ['alert', 'c_log'])
+            log_names = [__name__, 'alert']
+            report_names, app_handler_name = CloudLog.process_names(log_names)
+            app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
+            app_handler = CloudLog.make_handler(app_handler_name, cloud_level, res, log_client)
+            app.logger.addHandler(app_handler)
+            alert = CloudLog(log_name, base_level, automate=True, resource=res, client=log_client)
+
+            low_filter = LowPassFilter('', cloud_level, title='stdout')  # Do not log at this level or higher.
             if isinstance(log_client, StreamClient):
-                CloudLog.add_high_report(log_name)
-            c_log = CloudLog('c_log', base_level, res, logging)  # stderr out, propagate=False
+                low_app_name = app_handler_name + '_low'
+                low_handler = CloudLog.make_handler(low_app_name, base_level, res, log_client, stream='stdout')
+                low_handler.addFilter(low_filter)
+                app.logger.addHandler(low_handler)
+                app.logger.propagate = False
+                alert.propagate = False
+            else:  # isinstance(log_client, cloud_logging.Client):
+                CloudLog.add_report_log(report_names)
+                root_handlers = logging.root.handlers
+                root_handlers = CloudLog.high_low_split_handlers(base_level, cloud_level, root_handlers)
+                logging.root.handlers = root_handlers
+            c_client = StreamClient('c_log', res, labels)
+            c_log = CloudLog('c_log', base_level, res, c_client)  # stderr out, propagate=False
+            c_log.propagate = False
         app.log_client = log_client
         app._resource_test = res
         app.alert = alert
