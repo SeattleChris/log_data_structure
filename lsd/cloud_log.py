@@ -413,9 +413,10 @@ class CloudLog(logging.Logger):
     RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
     CLIENT_KW = ('project', 'credentials', 'client_info', 'client_options')  # also: '_http', '_use_grpc'
 
-    def __init__(self, name=None, level=None, automate=False, **kwargs):
+    def __init__(self, name=None, level=logging.NOTSET, automate=False, **kwargs):
         name = self.normalize_logger_name(name)
-        level = self.normalize_level(level)
+        if level:
+            level = self.normalize_level(level)
         super().__init__(name, level=level)
         # if name == self.DEFAULT_LOGGER_NAME:
         #     automate = True
