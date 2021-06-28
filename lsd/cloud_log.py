@@ -806,7 +806,7 @@ class CloudLog(logging.Logger):
     def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
         """The handler uses cloud logging output, or standard library stream, depending on the given client. """
         name = cls.normalize_handler_name(name)
-        stream = kwargs.pop('stream', None)
+        stream = cls.clean_stream(kwargs.pop('stream', None))
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
@@ -819,7 +819,7 @@ class CloudLog(logging.Logger):
         if not labels:
             labels = getattr(logging.root, '_config_labels', {})
         if isinstance(res, Resource):
-            labels.update(res.get('labels', {}))
+            labels.update(getattr(res, 'labels', {}))
         if not labels:
             labels = cls.get_environment_labels()
         labels.update(kwargs)
