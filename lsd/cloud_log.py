@@ -144,7 +144,12 @@ class StreamClient:
 
     def prepare_handler(self, handler_param):
         """Creates or updates a logging.Handler with the correct name and attaches the labels and resource. """
-        if isinstance(handler_param, type):
+        if isinstance(handler_param, str):
+            handler = logging._handlers.get(handler_param, None)
+            if not handler:
+                handler = logging.StreamHandler()
+                handler.set_name(handler_param.lower())
+        elif isinstance(handler_param, type):
             handler = handler_param()  # handler_param is a logging.Handler class.
         elif issubclass(handler_param.__class__, logging.Handler):
             handler = handler_param  # handler_param is the handler instance we wanted.
