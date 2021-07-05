@@ -804,6 +804,33 @@ class CloudLog(logging.Logger):
         res_type, labels = cls.get_resource_fields(res_type=res_type, **labels)
         return Resource(res_type, labels)
 
+    @classmethod
+    def prepare_res_label(cls, check_global=True, **kwargs):
+        """Will start with resource & labels in kwargs or found globally. Returns Resource, Labels, kwargs. """
+        config = kwargs.pop('config', environ)
+        res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
+        resource = kwargs.pop('resource', None)
+        label_overrides = kwargs.pop('labels', None)
+        if check_global:
+            resource = resource or getattr(logging.root, '_config_resource', {})
+            label_overrides = label_overrides or getattr(logging.root, '_config_labels', {})
+        else:
+            resource = resource or {}
+            label_overrides = label_overrides or {}
+        if resource and isinstance(resource, dict):
+            resource = Resource._from_dict(resource)
+        labels = getattr(resource, 'labels', {})
+        labels.update(kwargs)
+        labels.update(label_overrides)
+        if not isinstance(resource, Resource):
+            if not isinstance(resource, dict):
+                raise TypeError(f"The resource parameter must be a Resource, dict, or None. Did not work: {resource} ")
+            resource.update(labels)
+            resource = cls.make_resource(config, res_type, **resource)
+        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
+        labels.update(label_overrides)
+        return resource, labels, kwargs
+
     @staticmethod
     def reduce_range_overlaps(ranges):
         """Given a list with each element is a 2-tuple of min & max, returns a similar list simplified if possible. """
