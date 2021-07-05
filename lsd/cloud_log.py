@@ -804,12 +804,29 @@ class CloudLog(logging.Logger):
         res_type, labels = cls.get_resource_fields(res_type=res_type, **labels)
         return Resource(res_type, labels)
 
-    @classmethod
-    def make_formatter(cls, fmt=DEFAULT_FORMAT, datefmt=None):
-        """Creates a standard library formatter to attach to a handler. """
-        if isinstance(fmt, logging.Formatter):
-            return fmt
-        return logging.Formatter(fmt, datefmt=datefmt)
+    @staticmethod
+    def reduce_range_overlaps(ranges):
+        """Given a list with each element is a 2-tuple of min & max, returns a similar list simplified if possible. """
+        ranges = [ea for ea in ranges if ea]
+        if len(ranges) < 2:
+            return ranges
+        first, *ranges_ordered = list(reversed(sorted(ranges, key=lambda ea: ea[1] - ea[0])))
+        r_min = first[0]
+        r_max = first[1]
+        disjointed_ranges = []
+        for r in ranges_ordered:
+            if r_min <= r[0] <= r_max:
+                r_max = max(r[1], r_max)
+            elif r_min <= r[1] <= r_max:
+                r_min = min(r[0], r_min)
+            # Since we already looked at 'first' sorted by max range, not possible: r[0] < r_min and r[1] > r_max
+            elif r[0] == r[1]:
+                pass
+            else:  # range is possibly disjointed from other ranges. There may be a gap.
+                disjointed_ranges.append(r)
+        big_range = (r_min, r_max)
+        clean_ranges = [big_range, *disjointed_ranges]
+        return clean_ranges  # most commonly a list of 1 tuple. Multiple tuples occur for disjointed ranges.
 
     def log_levels_covered(self):
         """Reports what logging levels are covered by looking at attached handlers, and those on propagated parents. """
