@@ -67,18 +67,19 @@ class LowPassFilter(logging.Filter):
     """Only allows LogRecords that are exclusively below the specified log level, according to levelno. """
     DEFAULT_LEVEL = logging.WARNING
 
-    def __init__(self, name: str, level: int) -> None:
+    def __init__(self, name: str, level: int, title: str = '') -> None:
         super().__init__(name=name)
-        self._allowed_high = set()
-        level = 1 if name == NON_EXISTING_LOGGER_NAME else CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
+        self.title = title
+        self._allowed = set()
+        level = CloudLog.normalize_level(level, self.DEFAULT_LEVEL)
         self.below_level = level
         assert self.below_level > 0
 
-    def add_allowed_high(self, name):
-        """Any log records with these names are not affected by the low filter. They will always pass through. """
+    def allow(self, name):
+        """Any level log records with these names are not affected by the low filter. They will always pass through. """
         rv = None
-        if isinstance(name, (list, tuple)):
-            rv = [self.add_allowed_high(ea) for ea in name]
+        if isinstance(name, (list, tuple, set)):
+            rv = [self.allow(ea) for ea in name]
             name = None
         elif not isinstance(name, str):
             try:
@@ -88,45 +89,67 @@ class LowPassFilter(logging.Filter):
             except (AssertionError, Exception):
                 name = None
         if name and isinstance(name, str):
-            self._allowed_high.add(name)
+            self._allowed.add(name)
             rv = name
         if rv is None:
             raise TypeError("Unable to add log record name to the LowPassFilter allowed collection. ")
         return rv
 
     def filter(self, record):
-        if record.name in self._allowed_high:
+        if record.name in self._allowed:
             return True
-        is_logged = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
-        if is_logged and record.levelno > self.below_level - 1:
+        name_allowed = super().filter(record)  # Returns True if no self.name or if it matches start of record.name
+        if not name_allowed or record.levelno > self.below_level - 1:
             return False
-        # record._severity = record.levelname
         return True
 
     def __repr__(self):
-        if self.name == NON_EXISTING_LOGGER_NAME:
-            return '<LowPassFilter only {}>'.format(', '.join(self._allowed_high))
         name = self.name or 'All'
+        if name == NON_EXISTING_LOGGER_NAME:
+            name = 'None'
         allowed = ' '
-        if len(self._allowed_high):
-            allowed = ' and any ' + ', '.join(self._allowed_high)
-        return '<LowPassFilter only {} under {}{}>'.format(name, self.below_level, allowed)
+        if len(self._allowed):
+            allowed = ' and any ' + ', '.join(self._allowed)
+        return '<{} only {} under {}{}>'.format(self.__class__.__name__, name, self.below_level, allowed)
 
 
 class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
+    BASE_CLIENT_PARAMETERS = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
 
-    def __init__(self, name, labels=None, resource=None, project=None, handler=None):
+    def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
+        base_params = {name: kwargs.pop(name, None) for name in self.BASE_CLIENT_PARAMETERS}
+        for key in ('project', 'client_info', 'client_options'):
+            base_params['_' + key] = base_params.pop(key)
+        for key, val in base_params.items():
+            setattr(self, key, val)
+        # assert kwargs == {}
         self.handler_name = name.lower()
-        self._project = project or ''
-        self._labels = labels if isinstance(labels, dict) else {}
-        # self.labels = labels if isinstance(labels, dict) else {'project_id': project}
-        self.resource = resource
-        self.handler = self.prepare_handler(handler)
+        self.resource = resource or {}
+        self.labels = labels or {}
+        self._handler = None
+        if handler:
+            self.handler = handler
+
+    def update_attachments(self, resource=None, labels=None, handler=None):
+        """Helpful since the order matters. These may be added to the StreamClient later to assist in management. """
+        if isinstance(resource, Resource):
+            self.resource = resource
+        if isinstance(labels, dict):
+            self.labels = labels
+        if isinstance(handler, str):
+            self.handler_name = handler.lower()
+        elif handler:
+            self.handler = handler
 
     def prepare_handler(self, handler_param):
         """Creates or updates a logging.Handler with the correct name and attaches the labels and resource. """
-        if isinstance(handler_param, type):
+        if isinstance(handler_param, str):
+            handler = logging._handlers.get(handler_param, None)
+            if not handler:
+                handler = logging.StreamHandler()
+                handler.set_name(handler_param.lower())
+        elif isinstance(handler_param, type):
             handler = handler_param()  # handler_param is a logging.Handler class.
         elif issubclass(handler_param.__class__, logging.Handler):
             handler = handler_param  # handler_param is the handler instance we wanted.
@@ -136,9 +159,17 @@ class StreamClient:
             except Exception as e:
                 logging.exception(e)
                 raise ValueError("StreamClient handler must be a stream (like stdout) or a Handler class or instance. ")
-        handler.set_name(self.handler_name)
+            handler.set_name(self.handler_name)
         handler.labels = self.labels
         handler.resource = self.resource
+        if not getattr(handler, 'project', None):  # Either doesn't have the attr, or set to None.
+            if not hasattr(handler, 'project'):
+                attr = 'project'
+            elif hasattr(handler, '_project'):
+                attr = '_project'
+            setattr(handler, attr, self.project)
+        if not hasattr(handler, 'full_name'):
+            handler.full_name = f"projects/{handler.project}/logs/{handler.name}"
         return handler
 
     @property
@@ -151,10 +182,11 @@ class StreamClient:
         return rv
 
     @handler.setter
-    def handler(self, handle):
-        name = getattr(handle, 'name', None)
+    def handler(self, handler_param):
+        handler = self.prepare_handler(handler_param)
+        name = getattr(handler, 'name', None)
         if not name or name not in logging._handlers:
-            self._handler = handle
+            self._handler = handler
         else:
             self._handler = None  # Forces a lookup on logging._handlers, or creation if not present.
 
@@ -177,13 +209,20 @@ class StreamClient:
         labels_have_valid_data = bool(self._labels.get('project_id', None))
         if not labels_have_valid_data:
             try:
-                labels = self.resource.get('labels', {}).copy()
+                labels = getattr(self.resource, 'labels', {}).copy()
             except Exception:
                 labels = {}
             project = labels.get('project_id') or labels.get('project')
             labels['project_id'] = project or self._project
             self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
         return self._labels
+
+    @labels.setter
+    def labels(self, labels):
+        if not isinstance(labels, dict):
+            raise TypeError("Expected a dict input for labels. ")
+        res_labels = getattr(self.resource, 'labels', {})
+        self._labels = labels = {**res_labels, **labels}
 
     def logger(self, name):
         """Similar interface of google.cloud.logging.Client, but returns standard library logging.Handler instance. """
@@ -195,9 +234,9 @@ class StreamClient:
 
 
 class StreamTransport(BackgroundThreadTransport):
-    """Allows CloudParamHandler to use StreamHandler methods when using StreamClient. """
+    """A substitute for BackgroundThreadTransport in CloudParamHandler. Use StreamHandler & StreamClient technique. """
 
-    def __init__(self, client, name, *, grace_period=0, batch_size=0, max_latency=0):
+    def __init__(self, client, name, *, grace_period=0, batch_size=0, max_latency=0):  # like BackgroundThreadTransport
         self.client = client
         self.handler_name = name
         self.grace_period = grace_period
@@ -216,7 +255,7 @@ class StreamTransport(BackgroundThreadTransport):
         return entry
 
     def send(self, record, message, **kwargs):
-        """Similar to standard library logging.StreamHandler.emit, but with a json dict of appropriate values. """
+        """Replacing Transport send with similar to logging.StreamHandler.emit with json dict output. """
         entry = self.create_entry(record, message, **kwargs)
         entry = json.dumps(entry)
         try:
@@ -229,18 +268,12 @@ class StreamTransport(BackgroundThreadTransport):
             self.handleError(record)
 
     @property
-    def stream(self):
-        return self.handler.stream
-
-    @property
     def handler(self):
         return self.client.logger(self.handler_name)
 
     @property
-    def destination(self):
-        if not getattr(self, '_destination', None):
-            self._destination = self.stream.name.lstrip('<').rstrip('>')
-        return self._destination
+    def stream(self):
+        return self.handler.stream
 
     @property
     def terminator(self):
@@ -254,6 +287,12 @@ class StreamTransport(BackgroundThreadTransport):
     def handleError(self, record):
         return self.handler.handleError(record)
 
+    @property
+    def destination(self):
+        if not getattr(self, '_destination', None):
+            self._destination = self.stream.name.lstrip('<').rstrip('>')
+        return self._destination
+
     def __repr__(self) -> str:
         level = logging.getLevelName(self.handler.level)
         return '<%s %s | (%s) %s>' % (self.__class__.__name__, self.destination, level, self.handler_name)
@@ -262,30 +301,15 @@ class StreamTransport(BackgroundThreadTransport):
 class CloudParamHandler(CloudLoggingHandler):
     """Emits log by CloudLoggingHandler technique with a valid Client, or by StreamHandler if client is None. """
 
-    filter_keys = ('_resource', '_trace', '_span_id', '_http_request', '_source_location', '_labels', '_trace_str',
+    record_attr = ('_resource', '_trace', '_span_id', '_http_request', '_source_location', '_labels', '_trace_str',
                    '_span_id_str', '_http_request_str', '_source_location_str', '_labels_str', '_msg_str')
 
     def __init__(self, client, name='param_handler', resource=None, labels=None, stream=None, ignore=None):
-        if client in (None, logging):
-            client = StreamClient(name, labels, resource, handler=stream)
+        if not isinstance(client, (StreamClient, cloud_logging.Client)):
+            raise ValueError("Expected a StreamClient or cloud logging Client. ")
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
-        self.ignore = ignore  # self._data_keys = self.get_data_keys(ignore)
-
-    def get_data_keys(self, ignore=None, ignore_str_keys=True):
-        """DEPRECATED. Returns a list of the desired property names for logging that are set by CloudLoggingHandler. """
-        keys = set(key[1:] for key in self.filter_keys if not (ignore_str_keys and key.endswith('_str')))
-        ignore = getattr(self, 'ignore', None) if ignore is None else ignore
-        if isinstance(ignore, str):
-            ignore = {ignore, }
-        if isinstance(ignore, (list, tuple, set)):
-            ignore = set(key.lstrip('_') for key in ignore)
-        else:
-            ignore = set()
-        if not hasattr(self, ignore):
-            self.ignore = ignore
-        keys = keys.difference(ignore)
-        return keys
+        # handler_attr = ('name', 'transport(client, name)', 'client', 'project_id', 'resource', 'labels')
 
     def prepare_record_data(self, record):
         """Update record attributes set by CloudLoggingHandler and move http_request to labels to assist in logging. """
@@ -300,10 +324,6 @@ class CloudParamHandler(CloudLoggingHandler):
         labels = {**http_labels, **handler_labels, **record_labels}
         record._labels = labels
         record._http_request = None
-        # print(f"------------------- Prepared: {record.name} ------------------------")
-        # print(f"http_request: {record._http_request} ")
-        # print(f"Labels: {record._labels} ")
-        # print("---------------------------------------------------------")
         if isinstance(self.client, StreamClient) and isinstance(resource, Resource):
             record._resource = resource._to_dict()
         return record
@@ -312,10 +332,6 @@ class CloudParamHandler(CloudLoggingHandler):
         """After preparing the record data, will call the appropriate StreamTransport or BackgroundThreadTransport. """
         self.prepare_record_data(record)
         super().emit(record)
-
-    @property
-    def project(self):
-        self.client.project
 
     @property
     def destination(self):
@@ -375,43 +391,48 @@ class CloudLog(logging.Logger):
         'pubsub_topic': ['project_id', 'topic_id'],
         'reported_errors': ['project_id'],
         }
-    RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'parent', 'res_type', 'cred_or_path')
+    RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
     CLIENT_KW = ('project', 'credentials', 'client_info', 'client_options')  # also: '_http', '_use_grpc'
 
-    def __init__(self, name=None, level=None, resource=None, client=None, replace=False, **kwargs):
-        stream = kwargs.pop('stream', None)
+    def __init__(self, name=None, level=logging.NOTSET, automate=False, **kwargs):
+        name = self.normalize_logger_name(name)
+        if level:
+            level = self.normalize_level(level)
+        super().__init__(name, level=level)
+        if automate:
+            self.automated_structure(**kwargs)
+
+    def automated_structure(self, resource=None, client=None, replace=False, **kwargs):
+        """Typically only used for the core logers of the main code. This will add resource, labels, client, etc. """
+        # After cleaning out special key-words, the remaining kwargs are used for creating Resource and labels.
+        name = self.name
+        stream = self.clean_stream(kwargs.pop('stream', None))
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
         default_handle_name = default_handle_name or name
-        handle_name = kwargs.pop('handler_name', default_handle_name)
-        handle_level = kwargs.pop('handler_level', None)
+        handler_name = kwargs.pop('handler_name', default_handle_name)
+        handler_level = kwargs.pop('handler_level', None)
         parent = kwargs.pop('parent', logging.root)
-        # 'res_type' is passed through to Resource constructor
+        self.parent = self.normalize_parent(parent, name)
         cred_or_path = kwargs.pop('cred_or_path', None)
         if client and cred_or_path:
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
-        name = self.normalize_logger_name(name)
-        level = self.normalize_level(level)
-        super().__init__(name, level=level)
-        if resource is None:
-            resource = getattr(logging.root, '_config_resource', None)
-            resource = Resource._from_dict(resource)
-        if not isinstance(resource, Resource):  # resource may be None, a Config obj, or a dict.
-            resource = self.make_resource(resource, **kwargs)
-        self.labels = getattr(resource, 'labels', self.get_environment_labels())
+        resource, labels, kwargs = self.prepare_res_label(resource=resource, **kwargs)
+        self.labels = labels
         self.resource = resource._to_dict()
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
-        if client is logging:
+        client = self.make_client(client, **client_kwargs, **labels)
+        if isinstance(client, StreamClient):
+            client.update_attachments(resource, labels, handler_name)
             self.propagate = False
-        else:    # client may be None, a cloud_logging.Client, a credential object or path.
-            client = self.make_client(client, **client_kwargs, **self.labels)
+        elif isinstance(client, cloud_logging.Client):  # Most likely expeected outcome.
+            self.add_report_log(name)
         self.client = client  # accessing self.project may, on edge cases, set self.client
-        handler = self.make_handler(handle_name, handle_level, resource, client, fmt=fmt, stream=stream, **self.labels)
+        handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
         self.addHandler(handler)
-        self.parent = self.normalize_parent(parent, name)
         self.add_loggerDict(replace)
 
     def add_loggerDict(self, replace=False):
@@ -426,6 +447,69 @@ class CloudLog(logging.Logger):
             raise ValueError(f"A {self.name} logger already exists: {existing_logger}. Cannot replace with {self}.")
         manager.loggerDict[self.name] = self
         manager._fixupParents(self)
+
+    @property
+    def project(self):
+        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
+        if not getattr(self, '_project', None):
+            project = self.labels.get('project', None) or self.labels.get('project_id', None)
+            if not project and self.resource:
+                project = getattr(self.resource, 'labels', {})
+                project = project.get('project_id') or project.get('project')
+            if not project and isinstance(self.client, cloud_logging.Client):
+                project = self.client.project
+            if not project:
+                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
+            if not project:
+                cred_path = environ.get('GOOGLE_APPLICATION_CREDENTIALS', None)
+                self.client = self.make_client(cred_path)
+                project = self.client.project
+            if not project:
+                raise LookupError("Unable to discover the required Project id. ")
+            self._project = project
+        return self._project
+
+    @classmethod
+    def basicConfig(cls, config=None, **kwargs):
+        logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
+        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+        config = cls.config_as_dict(config)
+        debug = kwargs.pop('debug', None) or config.get('DEBUG', None)
+        testing = kwargs.pop('testing', None) or config.get('TESTING', None)
+        if testing:
+            return False
+        base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
+        base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
+        high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
+        if high_level < base_level:
+            raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
+        root_handlers = kwargs.pop('handlers', [])
+        root_handlers = cls.high_low_split_handlers(base_level, high_level, root_handlers)
+        log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
+        resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
+        log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
+        report_names, app_handler_name = cls.process_names(log_names)
+        if isinstance(log_client, cloud_logging.Client):
+            cls.add_report_log(report_names)
+        else:  # isinstance(log_client, StreamClient):
+            log_client.update_attachments(resource, labels, app_handler_name)
+        kwargs['handlers'] = root_handlers
+        kwargs['level'] = base_level
+        try:
+            logging.basicConfig(**kwargs)  # logging.root, or any loggers should not have been accessed yet.
+            root = logging.root
+            root._config_resource = resource._to_dict()
+            root._config_lables = labels
+            root._config_log_client = log_client
+            root._config_base_level = base_level
+            root._config_high_level = high_level
+        except Exception as e:
+            print("********************** Unable to do basicConfig **********************")
+            logging.exception(e)
+            return False
+        cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
+        cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
+        return cloud_config
 
     @classmethod
     def get_ignore_filter(cls):
@@ -449,23 +533,23 @@ class CloudLog(logging.Logger):
         root_low = logging._handlers.get('root_low', None)
         if not root_low:
             raise LookupError("Could not find expected 'root_low' handler. ")
-        targets = [filter for filter in root_low.filters if isinstance(filter, LowPassFilter) and not filter.name]
+        targets = [ea for ea in root_low.filters if isinstance(ea, LowPassFilter) and ea.title == 'stdout']
         if len(targets) > 1:
             warnings.warn("More than one possible LowPassFilter attached to 'root_low' handler. Using the first one. ")
         try:
             stdout_filter = targets[0]
         except IndexError:
-            stdout_filter = LowPassFilter(name='', level=cls.DEFAULT_HIGH_LEVEL)
+            high_level = getattr(logging.root, '_config_high_level', cls.DEFAULT_HIGH_LEVEL)
+            stdout_filter = LowPassFilter(name='', level=high_level, title='stdout')
             root_low.addFilter(stdout_filter)
-            # raise KeyError("Unable to find the 'stdout_filter' on the 'root_low' handler. ")
         return stdout_filter
 
     @classmethod
-    def add_high_report(cls, name):
-        """Any log records with a matching name will be logged by the high_report handler on root and not root_high. """
+    def add_report_log(cls, name):
+        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
         stdout_filter = cls.get_stdout_filter()
         ignore_filter = cls.get_ignore_filter()
-        rv = stdout_filter.add_allowed_high(name)
+        rv = stdout_filter.allow(name)
         if isinstance(rv, str):
             rv = [rv]
         if isinstance(rv, list):
@@ -476,95 +560,38 @@ class CloudLog(logging.Logger):
         return bool(rv)
 
     @classmethod
-    def basicConfig(cls, config=None, **kwargs):
-        logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
-        config = cls.config_as_dict(config)
-        debug = kwargs.pop('debug', None) or config.get('DEBUG', None)
-        testing = kwargs.pop('testing', None) or config.get('TESTING', None)
-        if testing:
-            return False
-        base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
-        base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
-        high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
-        if high_level < base_level:
-            raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
-        root_handlers = kwargs.pop('handlers', [])
-        name = kwargs.pop('name', cls.APP_LOGGER_NAME)
-        default_handle_name = cls.APP_HANDLER_NAME if name == cls.APP_LOGGER_NAME else cls.DEFAULT_HANDLER_NAME
-        handler_name = kwargs.pop('handler_name', default_handle_name)
-        name = cls.normalize_logger_name(name)
-        handler_name = cls.normalize_handler_name(handler_name)
-        client_overrides = {key: kwargs.pop(key) for key in cls.CLIENT_KW[1:] if key in kwargs}  # except for 'project'
-        resource = kwargs.pop('resource', None) or {}
-        labels = kwargs.pop('labels', None) or kwargs.copy()
-        if not isinstance(resource, Resource):
-            resource.update(labels)
-            resource = cls.make_resource(config, **resource)
-        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
-        client_kwargs = {k: v for k, v in labels.items() if k in cls.CLIENT_KW}  # such as 'project'
-        client_kwargs.update(client_overrides)
-        project = kwargs.pop('project', None) or kwargs.pop('project_id', None)
-        if project and 'project' not in client_kwargs:
-            client_kwargs['project'] = project
-        try:
-            log_client = CloudLog.make_client(cred_path, **client_kwargs)
-        except Exception as e:
-            logging.exception(e)
-            log_client = logging
+    def process_names(cls, log_names):
+        """Returns report_names and app_handler_name from a list of names or list of (name, handler_name) tuples. """
+        app_handler_name = None
+        report_names = set()
+        for name in log_names:
+            handler_name = None
+            if isinstance(name, tuple):
+                name, handler_name = name
+            name = cls.normalize_logger_name(name)
+            handler_name = cls.normalize_handler_name(handler_name or name)
+            if name == cls.APP_LOGGER_NAME:
+                app_handler_name = handler_name
+            report_names.add(name)
+            report_names.add(handler_name)
+        return report_names, app_handler_name
+
+    @classmethod
+    def high_low_split_handlers(cls, base_level, high_level, handlers=[], low_name='root_low', high_name='root_high'):
+        """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
         low_handler = logging.StreamHandler(stdout)
-        low_filter = LowPassFilter('', high_level)  # '' name means it applies to all logs pasing through.
+        low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
-        low_handler.set_name('root_low')
+        low_handler.setLevel(base_level)
+        low_handler.set_name(low_name)
         high_handler = logging.StreamHandler(stderr)
         high_handler.setLevel(high_level)
-        high_handler.set_name('root_high')
-        root_handlers.extend((low_handler, high_handler))
-        kwargs['handlers'] = root_handlers
-        kwargs['level'] = base_level
-        if log_client is not logging:
-            cls.add_high_report([name, handler_name])
-        try:
-            logging.basicConfig(**kwargs)
-            root = logging.root
-            root._config_resource = resource._to_dict()
-            root._config_lables = labels
-            root._config_log_client = log_client
-            root._config_name = name
-            root._config_base_level = base_level
-            root._config_high_level = high_level
-        except Exception as e:
-            print("********************** Unable to do basicConfig **********************")
-            logging.exception(e)
-            return False
-        cloud_config = {'log_client': log_client, 'name': name, 'base_level': base_level, 'high_level': high_level}
-        cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
-        return cloud_config
+        high_handler.set_name(high_name)
+        return [low_handler, high_handler, *handlers]
 
     @classmethod
     def getLogger(cls, name):
         return logging.getLogger(name)
-
-    @property
-    def project(self):
-        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
-        if not getattr(self, '_project', None):
-            project = self.labels.get('project', None) or self.labels.get('project_id', None)
-            if not project and self.resource:
-                project = self.resource.get('labels', {})
-                project = project.get('project_id') or project.get('project')
-            if not project and isinstance(self.client, cloud_logging.Client):
-                project = self.client.project
-            if not project:
-                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
-            if not project:
-                cred_path = environ.get('GOOGLE_APPLICATION_CREDENTIALS', None)
-                self.client = self.make_client(cred_path)
-                project = self.client.project
-            if not project:
-                raise LookupError("Unable to discover the required Project id. ")
-            self._project = project
-        return self._project
 
     @classmethod
     def normalize_level(cls, level=None, default=None):
@@ -589,10 +616,13 @@ class CloudLog(logging.Logger):
     @classmethod
     def normalize_handler_name(cls, name=None):
         """Returns a lowercase name based on the given input or default value. """
-        if not name or not isinstance(name, str):
+        error_message = f"Either a handler name, or a default name, string must be provided. {name} did not work. "
+        if name == cls.APP_LOGGER_NAME:
+            name = cls.APP_HANDLER_NAME
+        elif not name or not isinstance(name, str):
             name = cls.DEFAULT_HANDLER_NAME
         if not name:
-            raise TypeError(f"Either a handler name, or a default name, string must be provided. {name} did not work. ")
+            raise TypeError(error_message)
         return name.lower()
 
     @classmethod
@@ -611,11 +641,35 @@ class CloudLog(logging.Logger):
         return parent
 
     @classmethod
-    def make_client(cls, cred_or_path=None, **kwargs):
+    def clean_formatter(cls, fmt=DEFAULT_FORMAT, datefmt=None):
+        """Creates a standard library formatter to attach to a handler. """
+        if isinstance(fmt, logging.Formatter):
+            return fmt
+        return logging.Formatter(fmt, datefmt=datefmt)
+
+    @classmethod
+    def clean_stream(cls, stream):
+        """If given a string of 'stdout' or 'stderr', returns appropriate sys stream. Otherwise returns input. """
+        if isinstance(stream, str):
+            if stream == 'stdout':
+                stream = stdout
+            elif stream == 'stderr':
+                stream = stderr
+        return stream
+
+    @classmethod
+    def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)) or cred_or_path == logging:
+        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
             return cred_or_path
-        client_kwargs = {key: kwargs[key] for key in cls.CLIENT_KW if key in kwargs}  # such as 'project'
+        if res_label is False:
+            check_global = False
+        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
+        if 'project' in kwargs:
+            client_kwargs['project'] = kwargs['project']
+        resource, labels = None, None
+        if res_label:
+            resource, labels, kwargs = cls.prepare_res_label(check_global, **kwargs)
         if isinstance(cred_or_path, service_account.Credentials):
             credentials = cred_or_path
         elif cred_or_path:
@@ -624,13 +678,22 @@ class CloudLog(logging.Logger):
         else:
             credentials = None
         client_kwargs.setdefault('credentials', credentials)
-        log_client = cloud_logging.Client(**client_kwargs)
+        log_client = None
+        if cred_or_path != logging:
+            try:
+                log_client = cloud_logging.Client(**client_kwargs)
+            except Exception as e:
+                logging.exception(e)
+                log_client = None
+        if not log_client:
+            log_client = StreamClient(**kwargs, **client_kwargs)
+        if isinstance(log_client, StreamClient) and any(resource, labels):
+            log_client.update_attachments(resource, labels)
         return log_client
 
     @classmethod
-    def get_resource_fields(cls, settings):
+    def get_resource_fields(cls, res_type=DEFAULT_RESOURCE_TYPE, **settings):
         """For a given resource type, extract the expected required fields from the kwargs passed and project_id. """
-        res_type = settings.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
         project_id = settings.pop('project_id', None) or settings.pop('project', None)
         if not project_id:
             project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
@@ -658,7 +721,7 @@ class CloudLog(logging.Logger):
         labels = {
             'gae_env': config.get('GAE_ENV'),
             'project': project,
-            'project_id': project,
+            'project_id': project_id,
             'service': config.get('GAE_SERVICE'),
             'module_id': config.get('GAE_SERVICE'),
             'code_service': config.get('CODE_SERVICE'),  # Either local or GAE_SERVICE value
@@ -677,68 +740,158 @@ class CloudLog(logging.Logger):
         return config
 
     @classmethod
-    def make_resource(cls, config, **kwargs):
+    def make_resource(cls, config, res_type=DEFAULT_RESOURCE_TYPE, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
         config = cls.config_as_dict(config)
         labels = cls.get_environment_labels(config)
+        label_overrides = kwargs.pop('labels', {})
         labels.update(kwargs)
-        res_type, labels = cls.get_resource_fields(labels)
+        labels.update(label_overrides)
+        res_type, labels = cls.get_resource_fields(res_type=res_type, **labels)
         return Resource(res_type, labels)
 
     @classmethod
-    def make_formatter(cls, fmt=DEFAULT_FORMAT, datefmt=None):
-        """Creates a standard library formatter to attach to a handler. """
-        if isinstance(fmt, logging.Formatter):
-            return fmt
-        return logging.Formatter(fmt, datefmt=datefmt)
+    def prepare_res_label(cls, check_global=True, **kwargs):
+        """Will start with resource & labels in kwargs or found globally. Returns Resource, Labels, kwargs. """
+        config = kwargs.pop('config', environ)
+        res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
+        resource = kwargs.pop('resource', None)
+        label_overrides = kwargs.pop('labels', None)
+        if check_global:
+            resource = resource or getattr(logging.root, '_config_resource', {})
+            label_overrides = label_overrides or getattr(logging.root, '_config_labels', {})
+        else:
+            resource = resource or {}
+            label_overrides = label_overrides or {}
+        if resource and isinstance(resource, dict):
+            resource = Resource._from_dict(resource)
+        labels = getattr(resource, 'labels', {})
+        labels.update(kwargs)
+        labels.update(label_overrides)
+        if not isinstance(resource, Resource):
+            if not isinstance(resource, dict):
+                raise TypeError(f"The resource parameter must be a Resource, dict, or None. Did not work: {resource} ")
+            resource.update(labels)
+            resource = cls.make_resource(config, res_type, **resource)
+        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
+        labels.update(label_overrides)
+        return resource, labels, kwargs
 
-    def log_levels_covered(self):
-        """Reports what logging levels are covered by looking at attached handlers, and those on propagated parents. """
-        max_level = logging.CRITICAL  # Same as logging.FATAL
-        # TODO: Submit issue - self.getEffectiveLevel will falsely report a parent value if propagate is False.
-        log_name = self.name
-        log_construct_level = (log_name, self.level, max_level)  # Does not account for propagating effective level.
-        levels = {log_construct_level, }
-        names = {log_name, }
-        entry = defaultdict({'min': 0, 'max': logging.CRITICAL, 'ranges': [], 'children': set(), 'parent_name': ''})
-        tree = defaultdict()
-        tree[log_name] = {'min': self.level, 'max': max_level, 'ranges': [], 'children': set(), 'parent_name': None}
+    @staticmethod
+    def reduce_range_overlaps(ranges):
+        """Given a list with each element is a 2-tuple of min & max, returns a similar list simplified if possible. """
+        ranges = [ea for ea in ranges if ea]
+        if len(ranges) < 2:
+            return ranges
+        first, *ranges_ordered = list(reversed(sorted(ranges, key=lambda ea: ea[1] - ea[0])))
+        r_min = first[0]
+        r_max = first[1]
+        disjointed_ranges = []
+        for r in ranges_ordered:
+            if r_min <= r[0] <= r_max:
+                r_max = max(r[1], r_max)
+            elif r_min <= r[1] <= r_max:
+                r_min = min(r[0], r_min)
+            # Since we already looked at 'first' sorted by max range, not possible: r[0] < r_min and r[1] > r_max
+            elif r[0] == r[1]:
+                pass
+            else:  # range is possibly disjointed from other ranges. There may be a gap.
+                disjointed_ranges.append(r)
+        big_range = (r_min, r_max)
+        clean_ranges = [big_range, *disjointed_ranges]
+        return clean_ranges  # most commonly a list of 1 tuple. Multiple tuples occur for disjointed ranges.
 
-        pass
+    @staticmethod
+    def determine_filter_ranges(filters, name, low_level):
+        """For a given filters, determine the ranges covered for LogRecord with given name. """
+        max_level = logging.CRITICAL + 1  # Same as logging.FATAL + 1
+        if not isinstance(filters, (list, tuple, set)):
+            filters = [filters]
+        if not len(filters):
+            r = (low_level, max_level)
+            return [r]
+        low_name_match = ['', name]
+        temp = name
+        for _ in range(0, name.count('.')):
+            temp = temp.rpartition('.')[0]
+            low_name_match.append(temp)
+        low_name_match.append(NON_EXISTING_LOGGER_NAME)
+        ranges = []
+        for filter in filters:
+            if isinstance(filter, LowPassFilter) and name in filter._allowed:
+                r = (low_level, max_level)
+            elif isinstance(filter, LowPassFilter) and filter.name in low_name_match:
+                r = (low_level, filter.below_level)
+            elif isinstance(filter, IgnoreFilter) and name in filter.ignore:
+                r = tuple()
+            elif isinstance(filter, logging.Filter) and getattr(filter, 'name', '') not in low_name_match[:-1]:
+                r = tuple()
+            else:
+                r = (low_level, max_level)
+            ranges.append(r)
+        return ranges
+
+    def log_levels_covered(self, name='', level=None, external=None):
+        """Returns a list of range 2-tuples for ranges covered for the named (or current) logger.
+        Both 'name' and 'level' will default to current Logger name and level if not given.
+        If external is True, only considers LogRecords sent to external (non-standard) log stream.
+        If external is False, excludes LogRecords sent to external log streams.
+        If external is None (default), reports range(s) sent to some log.
+        """
+        name = name or self.name
+        level = self.level if level is None else level
+        normal_ranges, external_ranges = [], []
+        cur = self
+        while cur:
+            for handler in cur.handlers:
+                cur_level = max((handler.level, level))
+                handler_ranges = self.determine_filter_ranges(handler.filters, name, cur_level)
+                transport = getattr(handler, 'transport', None)
+                if isinstance(handler, CloudParamHandler) and not isinstance(transport, StreamTransport):
+                    external_ranges.extend(handler_ranges)
+                else:
+                    normal_ranges.extend(handler_ranges)
+            cur = cur.parent if cur.propagate else None
+        if external:
+            ranges = external_ranges
+        elif external is None:
+            ranges = [*normal_ranges, *external_ranges]
+        else:  # external == True
+            ranges = normal_ranges
+        reduced = self.reduce_range_overlaps(ranges)
+        return ranges, reduced
 
     @classmethod
     def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
-        """Creates a cloud logging handler, or a standard library StreamHandler if log_client is logging. """
-        stream = kwargs.pop('stream', None)
+        """The handler uses cloud logging output, or standard library stream, depending on the given client. """
+        name = cls.normalize_handler_name(name)
+        stream = cls.clean_stream(kwargs.pop('stream', None))
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        cred_or_path = kwargs.pop('cred_or_path', None)
-        labels = getattr(logging.root, '_config_labels', {})
-        labels.update(kwargs.pop('labels', {}))
+        if client is None:
+            client = getattr(logging.root, '_config_log_client', None)
+        if not client:
+            raise TypeError("Expected a Client instance, or an already attached Client. ")
         if res is None:
             res = getattr(logging.root, '_config_resource', None)
             res = Resource._from_dict(res) if isinstance(res, dict) else res
-        if not isinstance(res, Resource):  # res may be None, a Config obj, or a dict.
-            res = cls.make_resource(res, **kwargs)
-        labels.update(getattr(res, 'labels', {}))
+        labels = kwargs.pop('labels', None)
+        if not labels:
+            labels = getattr(logging.root, '_config_labels', {})
+        if isinstance(res, Resource):
+            labels.update(getattr(res, 'labels', {}))
         if not labels:
             labels = cls.get_environment_labels()
         labels.update(kwargs)
-        name = cls.normalize_handler_name(name)
         handler_kwargs = {'name': name, 'labels': labels}
         if res:
             handler_kwargs['resource'] = res
         if stream:
             handler_kwargs['stream'] = stream
-        if client is None:
-            client = getattr(logging.root, '_config_log_client', None)
-        if client is not logging:
-            client = client or cred_or_path
-            client = cls.make_client(client, **labels)
-        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler if client, else StreamHandler.
+        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler, or stream if StreamClient.
         if level:
             level = cls.normalize_level(level)
             handler.setLevel(level)
-        fmt = cls.make_formatter(fmt)
+        fmt = cls.clean_formatter(fmt)
         handler.setFormatter(fmt)
         return handler
 
@@ -761,112 +914,180 @@ class CloudLog(logging.Logger):
         return
 
     @staticmethod
-    def get_named_handler(logger=logging.root, name="python"):
+    def get_named_handler(name="python", logger=logging.root):
         """Returns the CloudLoggingHandler with the matching name attached to the provided logger. """
-        handlers = getattr(logger, 'handlers', [])
-        for handle in handlers:
-            if isinstance(handle, CloudLoggingHandler) and handle.name == name:
-                return handle
+        try:
+            handle = logging._handlers.get(name)
+            return handle
+        except Exception as e:
+            logging.exception(e)
+            while logger:
+                handlers = getattr(logger, 'handlers', [])
+                for handle in handlers:
+                    if handle.name == name:
+                        return handle
+                logger = logger.parent
         return None
 
     @classmethod
     def make_base_logger(cls, name=None, level=None, res=None, client=None, **kwargs):
         """Used to create a logger with a cloud handler when a CloudLog instance is not desired. """
+        name = cls.normalize_logger_name(name)
+        level = cls.normalize_level(level)
+        logger = None
+        if logging.getLoggerClass() == cls:
+            try:
+                logger = logging.Logger(name, level)
+                cls.add_loggerDict(logger, replace=False)
+            except Exception as e:
+                logging.exception(e)
+                logger = None
+        if not logger:
+            logger = logging.getLogger(name)
+            logger.setLevel(level)
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         handler_name = kwargs.pop('handler_hame', name)
         handler_level = kwargs.pop('handler_level', None)
-        name = cls.normalize_logger_name(name)
-        logger = logging.getLogger(name)
         handler = cls.make_handler(handler_name, handler_level, res, client, fmt=fmt, **kwargs)
         logger.addHandler(handler)
-        level = cls.normalize_level(level)
-        logger.setLevel(level)
         return logger
 
     @staticmethod
     def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):
         """Used for testing the log setups. """
         from pprint import pprint
+        from collections import Counter
+
         if not app.got_first_request:
             app.try_trigger_before_first_request_functions()
         if logger_names is not None and not logger_names:
             logger_names = getattr(app, 'log_list', [])
+        elif logger_names is None:
+            logger_names = []
         app_loggers = [(name, getattr(app, name)) for name in logger_names if hasattr(app, name)]
         print(f"Found {len(app_loggers)} named attachments. ")
         app_loggers = [ea for ea in app_loggers if ea[1] is not None]
         print(f"Expected {len(logger_names)} and found {len(app_loggers)} named loggers. ")
         if hasattr(app, 'logger'):
-            app_loggers.insert(0, ('App_Logger', app.logger))
+            app_loggers.insert(0, ('app.logger', app.logger))
         if loggers:
             print(f"Investigating {len(loggers)} independent loggers. ")
-        loggers = [('root', logging.root)] + app_loggers + [(num, ea) for num, ea in enumerate(loggers)]
-        print(f"Total loggers: {len(loggers)} ")
+        if isinstance(loggers, dict):
+            loggers = [(name, logger) for name, logger in loggers.items()]
+            # loggers = sorted(loggers, key=lambda log: log[0])
+        elif isinstance(loggers, (list, tuple)):
+            loggers = [(num, ea) for num, ea in enumerate(loggers)]
+        else:
+            loggers = []
+        adapters, null_loggers, active_loggers = [], [], []
+        for ea in loggers:
+            if isinstance(ea[1], logging.LoggerAdapter):
+                adapters.append(ea)
+            elif not getattr(ea[1], 'handlers', None):
+                null_loggers.append(ea)
+            else:
+                active_loggers.append(ea)
+        loggers = [('root', logging.root)] + app_loggers
+        print(f"Logger counts -  ")
+        print(f"Active logger count: {len(loggers)} Null Logger count: {len(null_loggers)} ")
         code = app.config.get('CODE_SERVICE', 'UNKNOWN')
-        print(f"=================== Logger Tests & Info: {code} ===================")
+        print(f"\n=================== Logger Tests & Info: {code} ===================")
         found_handler_str = ''
         all_handlers = []
         for name, logger in loggers:
             adapter = None
             if isinstance(logger, logging.LoggerAdapter):
                 adapter, logger = logger, logger.logger
-            handlers = getattr(logger, 'handlers', ['not found'])
-            if isinstance(handlers, list):
-                all_handlers.extend(handlers)
-            found_handler_str += f"{name} handlers: {', '.join([str(ea) for ea in handlers])} " + '\n'
+            handlers = getattr(logger, 'handlers', [])
+            all_handlers.extend(handlers)
+            desc = ' ADAPTER' if adapter else ''
+            if isinstance(logger, logging.PlaceHolder):
+                desc += ' PLACEHOLDER'
+            elif not handlers:
+                desc += ' None'
+            else:
+                desc += ' '
+            found_handler_str += f"{name}:{desc}{', '.join([str(ea) for ea in handlers])} " + '\n'
             if adapter:
                 print(f"-------------------------- {name} ADAPTER Settings --------------------------")
                 pprint(adapter.__dict__)
-            print(f"---------------------------- {name} Logger Settings ----------------------------")
+            print(f"---------------------------- {name} Logger {repr(logger)} ----------------------------")
             pprint(logger.__dict__)
             print(f'------------------------- Logger Calls: {name} -------------------------')
             for level in levels:
                 if hasattr(adapter or logger, level):
                     getattr(adapter or logger, level)(' - '.join((context, name, level, code)))
                 else:
-                    logging.warning("{} in {}: No {} method on logger {} ", context, code, level, name)
-        print(f"=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
+                    print("{} in {}: No {} method on logger {} ".format(context, code, level, name))
+        print(f"\n=================== Handler Info: found {len(all_handlers)} on tested loggers ===================")
         print(found_handler_str)
-        creds_list = []
-        resources = []
+        found_clients, creds_list, resources = [], [], []
+        all_handlers = [ea for ea in all_handlers if ea and ea != 'not found']
         for num, handle in enumerate(all_handlers):
-            print(f"------------------------- {num}: {handle.name} -------------------------")
+            print(f"--------------------- {num}: {getattr(handle, 'name', None) or repr(handle)} ---------------------")
             pprint(handle.__dict__)
             temp_client = getattr(handle, 'client', object)
-            temp_creds = getattr(temp_client, '_credentials', None)
-            if temp_creds:
-                creds_list.append(temp_creds)
+            if isinstance(temp_client, (cloud_logging.Client, StreamClient)):
+                found_clients.append(temp_client)
+                temp_creds = getattr(temp_client, '_credentials', None)
+                if temp_creds:
+                    creds_list.append(temp_creds)
             resources.append(getattr(handle, 'resource', None))
-        print("=================== Resources found attached to the Handlers ===================")
+        print("\n=================== Resources found attached to the Handlers ===================")
         if hasattr(app, '_resource_test'):
             resources.append(app._resource_test)
         for res in resources:
             if hasattr(res, '_to_dict'):
                 pprint(res._to_dict())
             else:
-                pprint(f"Resource was: {res} ")
-        pprint("=================== App Log Client Credentials ===================")
+                print(f"Resource was: {res} ")
+        print("\n=================== App Log Client Credentials ===================")
         log_client = getattr(app, 'log_client', None)
-        if log_client is logging:
-            log_client = None
-        app_creds = log_client._credentials if log_client else None
-        if app_creds in creds_list:
-            app_creds = None
+        app_creds = None
+        if log_client is not logging:
+            app_creds = getattr(log_client, '_credentials', None)
+            if app_creds in creds_list:
+                app_creds = None
         print(f"Currently have {len(creds_list)} creds from logger clients. ")
         creds_list = [(f"client_cred_{num}", ea) for num, ea in enumerate(set(creds_list))]
-        print(f"With {len(creds_list)} unique client credentials. " + '\n')
+        print(f"With {len(creds_list)} unique client credentials. ")
         if log_client and not app_creds:
-            print("App Log Client Creds - already included in logger clients. ")
+            print("App Log Client Creds - already included in logger clients. " + '\n')
         elif app_creds:
-            print("Adding App Log Client Creds. ")
+            print("Adding App Log Client Creds. " + '\n')
             creds_list.append(('App Log Client Creds', app_creds))
         for name, creds in creds_list:
-            pprint(f"{name}: {creds} ")
-            pprint(creds.expired)
-            pprint(creds.valid)
+            print(f"{name}: {creds} ")
+            print(creds.expired)
+            print(creds.valid)
             pprint(creds.__dict__)
-            pprint("--------------------------------------------------")
+            print("--------------------------------------------------")
         if not creds_list:
             print("No credentials found to report.")
+        print("\n=================== Log Clients Discovered ===================")
+        # for num, c in enumerate(found_clients):
+        #     print(f"{num}: {c} ")
+        found_count = len(found_clients)
+        if log_client:
+            found_clients.append(log_client)
+        count = dict(Counter(found_clients))
+        count['total'] = sum(val for name, val in count.items())
+        count_diff = count['total'] - found_count
+        message = f"Discovered {len(found_clients)} clients, "
+        if count_diff:
+            message += f"plus the {count_diff} expected client. "
+        elif log_client:
+            message += "which includes the expected client. "
+        else:
+            message += "and no attached log_client. "
+        print(message)
+        found_client = set(found_clients)
+        print(f"With {len(found_client)} unique Clients. \n")
+        for c in found_client:
+            print(repr(c))
+            print(f"Count: {count[c]} ")
+            pprint(c.__dict__)
+            print("--------------------------------------------------")
 
 
 def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, config=None, extra=None):
@@ -876,13 +1097,13 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
     log_client.setup_logging(log_level=base_log_level)  # log_level sets the logger, not the handler.
     # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
     root_handler = logging.root.handlers[0]
-    low_filter = LowPassFilter(CloudLog.APP_LOGGER_NAME, cloud_log_level)
+    low_filter = LowPassFilter(CloudLog.APP_LOGGER_NAME, cloud_log_level, 'stdout')
     root_handler.addFilter(low_filter)
     fmt = getattr(root_handler, 'formatter', None)
     if not fmt:
         fmt = DEFAULT_FORMAT
         root_handler.setFormatter(fmt)
-    resource = CloudLog.make_resource(config)
+    resource = CloudLog.make_resource(config, CloudLog.DEFAULT_RESOURCE_TYPE)
     handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_log_level, resource, log_client, fmt=fmt)
     logging.root.addHandler(handler)
     if extra is None:
@@ -891,21 +1112,3 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
         extra = [extra]
     cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra]
     return (log_client, *cloud_logs)
-
-
-def logger_coverage(logger):
-    """Determine what logging levels are covered for a given (all?) logger. """
-    construct_level = logger.level
-    delayed = []
-    for handler in logger.handlers:
-        has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
-        if has_external_log:
-            delayed.append(handler)
-            continue
-        low = max((construct_level, handler.level))
-        high = MAX_LOG_LEVEL
-        ranges = []
-        for filter in handler.filters:
-            if isinstance(filter, LowPassFilter):
-                pass
-        # client = getattr(handler, 'client', None)
