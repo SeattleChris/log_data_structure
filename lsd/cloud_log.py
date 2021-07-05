@@ -858,7 +858,35 @@ class CloudLog(logging.Logger):
             ranges.append(r)
         return ranges
 
-        pass
+    def log_levels_covered(self, name='', level=None, external=None):
+        """Returns a list of range 2-tuples for ranges covered for the named (or current) logger.
+        Both 'name' and 'level' will default to current Logger name and level if not given.
+        If external is True, only considers LogRecords sent to external (non-standard) log stream.
+        If external is False, excludes LogRecords sent to external log streams.
+        If external is None (default), reports range(s) sent to some log.
+        """
+        name = name or self.name
+        level = self.level if level is None else level
+        normal_ranges, external_ranges = [], []
+        cur = self
+        while cur:
+            for handler in cur.handlers:
+                cur_level = max((handler.level, level))
+                handler_ranges = self.determine_filter_ranges(handler.filters, name, cur_level)
+                transport = getattr(handler, 'transport', None)
+                if isinstance(handler, CloudParamHandler) and not isinstance(transport, StreamTransport):
+                    external_ranges.extend(handler_ranges)
+                else:
+                    normal_ranges.extend(handler_ranges)
+            cur = cur.parent if cur.propagate else None
+        if external:
+            ranges = external_ranges
+        elif external is None:
+            ranges = [*normal_ranges, *external_ranges]
+        else:  # external == True
+            ranges = normal_ranges
+        reduced = self.reduce_range_overlaps(ranges)
+        return ranges, reduced
 
     @classmethod
     def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
