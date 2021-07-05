@@ -828,17 +828,35 @@ class CloudLog(logging.Logger):
         clean_ranges = [big_range, *disjointed_ranges]
         return clean_ranges  # most commonly a list of 1 tuple. Multiple tuples occur for disjointed ranges.
 
-    def log_levels_covered(self):
-        """Reports what logging levels are covered by looking at attached handlers, and those on propagated parents. """
-        max_level = logging.CRITICAL  # Same as logging.FATAL
-        # TODO: Submit issue - self.getEffectiveLevel will falsely report a parent value if propagate is False.
-        log_name = self.name
-        log_construct_level = (log_name, self.level, max_level)  # Does not account for propagating effective level.
-        levels = {log_construct_level, }
-        names = {log_name, }
-        entry = defaultdict({'min': 0, 'max': logging.CRITICAL, 'ranges': [], 'children': set(), 'parent_name': ''})
-        tree = defaultdict()
-        tree[log_name] = {'min': self.level, 'max': max_level, 'ranges': [], 'children': set(), 'parent_name': None}
+    @staticmethod
+    def determine_filter_ranges(filters, name, low_level):
+        """For a given filters, determine the ranges covered for LogRecord with given name. """
+        max_level = logging.CRITICAL + 1  # Same as logging.FATAL + 1
+        if not isinstance(filters, (list, tuple, set)):
+            filters = [filters]
+        if not len(filters):
+            r = (low_level, max_level)
+            return [r]
+        low_name_match = ['', name]
+        temp = name
+        for _ in range(0, name.count('.')):
+            temp = temp.rpartition('.')[0]
+            low_name_match.append(temp)
+        low_name_match.append(NON_EXISTING_LOGGER_NAME)
+        ranges = []
+        for filter in filters:
+            if isinstance(filter, LowPassFilter) and name in filter._allowed:
+                r = (low_level, max_level)
+            elif isinstance(filter, LowPassFilter) and filter.name in low_name_match:
+                r = (low_level, filter.below_level)
+            elif isinstance(filter, IgnoreFilter) and name in filter.ignore:
+                r = tuple()
+            elif isinstance(filter, logging.Filter) and getattr(filter, 'name', '') not in low_name_match[:-1]:
+                r = tuple()
+            else:
+                r = (low_level, max_level)
+            ranges.append(r)
+        return ranges
 
         pass
 
