@@ -572,8 +572,7 @@ class CloudLog(logging.Logger):
             handler_name = cls.normalize_handler_name(handler_name or name)
             if name == cls.APP_LOGGER_NAME:
                 app_handler_name = handler_name
-            report_names.add(name)
-            report_names.add(handler_name)
+            report_names.update([name, handler_name])
         return report_names, app_handler_name
 
     @classmethod
