@@ -1,4 +1,3 @@
-from collections import defaultdict
 import logging
 import warnings
 from sys import stderr, stdout
@@ -425,49 +424,15 @@ class CloudLog(logging.Logger):
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, **client_kwargs, **labels)
-        if isinstance(client, StreamClient):
+        if isinstance(client, cloud_logging.Client):  # Most likely expeected outcome.
+            self.add_report_log(name)
+        elif isinstance(client, StreamClient):
             client.update_attachments(resource, labels, handler_name)
             self.propagate = False
-        elif isinstance(client, cloud_logging.Client):  # Most likely expeected outcome.
-            self.add_report_log(name)
         self.client = client  # accessing self.project may, on edge cases, set self.client
         handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
         self.addHandler(handler)
         self.add_loggerDict(replace)
-
-    def add_loggerDict(self, replace=False):
-        """Emulates the effect of current logger being accessed by getLogger function and makes it available to it. """
-        manager = self.manager
-        existing_logger = manager.loggerDict.get(self.name, None)
-        if isinstance(existing_logger, logging.PlaceHolder):
-            manager._fixupChildren(existing_logger, self)
-        elif existing_logger is None or replace is True:
-            pass
-        elif existing_logger != self:
-            raise ValueError(f"A {self.name} logger already exists: {existing_logger}. Cannot replace with {self}.")
-        manager.loggerDict[self.name] = self
-        manager._fixupParents(self)
-
-    @property
-    def project(self):
-        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
-        if not getattr(self, '_project', None):
-            project = self.labels.get('project', None) or self.labels.get('project_id', None)
-            if not project and self.resource:
-                project = getattr(self.resource, 'labels', {})
-                project = project.get('project_id') or project.get('project')
-            if not project and isinstance(self.client, cloud_logging.Client):
-                project = self.client.project
-            if not project:
-                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
-            if not project:
-                cred_path = environ.get('GOOGLE_APPLICATION_CREDENTIALS', None)
-                self.client = self.make_client(cred_path)
-                project = self.client.project
-            if not project:
-                raise LookupError("Unable to discover the required Project id. ")
-            self._project = project
-        return self._project
 
     @classmethod
     def basicConfig(cls, config=None, **kwargs):
@@ -488,11 +453,6 @@ class CloudLog(logging.Logger):
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
-        report_names, app_handler_name = cls.process_names(log_names)
-        if isinstance(log_client, cloud_logging.Client):
-            cls.add_report_log(report_names)
-        else:  # isinstance(log_client, StreamClient):
-            log_client.update_attachments(resource, labels, app_handler_name)
         kwargs['handlers'] = root_handlers
         kwargs['level'] = base_level
         try:
@@ -507,6 +467,11 @@ class CloudLog(logging.Logger):
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
             return False
+        report_names, app_handler_name = cls.process_names(log_names)
+        if isinstance(log_client, cloud_logging.Client):
+            cls.add_report_log(report_names)
+        else:  # isinstance(log_client, StreamClient):
+            log_client.update_attachments(resource, labels, app_handler_name)
         cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
@@ -528,20 +493,20 @@ class CloudLog(logging.Logger):
         return ignore_filter
 
     @classmethod
-    def get_stdout_filter(cls):
+    def get_stdout_filter(cls, handler_name='root_low'):
         """The filter for 'root_low' stdout handler. Allows low level logs AND to report logs recorded elsewhere. """
-        root_low = logging._handlers.get('root_low', None)
-        if not root_low:
-            raise LookupError("Could not find expected 'root_low' handler. ")
-        targets = [ea for ea in root_low.filters if isinstance(ea, LowPassFilter) and ea.title == 'stdout']
+        low_handler = logging._handlers.get(handler_name, None)
+        if not low_handler:
+            raise LookupError(f"Could not find expected {handler_name} handler. ")
+        targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title == 'stdout']
         if len(targets) > 1:
-            warnings.warn("More than one possible LowPassFilter attached to 'root_low' handler. Using the first one. ")
+            warnings.warn(f"More than one LowPassFilter attached to {handler_name} handler. Using the first one. ")
         try:
             stdout_filter = targets[0]
         except IndexError:
             high_level = getattr(logging.root, '_config_high_level', cls.DEFAULT_HIGH_LEVEL)
             stdout_filter = LowPassFilter(name='', level=high_level, title='stdout')
-            root_low.addFilter(stdout_filter)
+            low_handler.addFilter(stdout_filter)
         return stdout_filter
 
     @classmethod
@@ -776,6 +741,40 @@ class CloudLog(logging.Logger):
         labels.update(label_overrides)
         return resource, labels, kwargs
 
+    @property
+    def project(self):
+        """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
+        if not getattr(self, '_project', None):
+            project = self.labels.get('project', None) or self.labels.get('project_id', None)
+            if not project and self.resource:
+                project = getattr(self.resource, 'labels', {})
+                project = project.get('project_id') or project.get('project')
+            if not project and isinstance(self.client, cloud_logging.Client):
+                project = self.client.project
+            if not project:
+                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
+            if not project:
+                cred_path = environ.get('GOOGLE_APPLICATION_CREDENTIALS', None)
+                self.client = self.make_client(cred_path)
+                project = self.client.project
+            if not project:
+                raise LookupError("Unable to discover the required Project id. ")
+            self._project = project
+        return self._project
+
+    def add_loggerDict(self, replace=False):
+        """Emulates the effect of current logger being accessed by getLogger function and makes it available to it. """
+        manager = self.manager
+        existing_logger = manager.loggerDict.get(self.name, None)
+        if isinstance(existing_logger, logging.PlaceHolder):
+            manager._fixupChildren(existing_logger, self)
+        elif existing_logger is None or replace is True:
+            pass
+        elif existing_logger != self:
+            raise ValueError(f"A {self.name} logger already exists: {existing_logger}. Cannot replace with {self}.")
+        manager.loggerDict[self.name] = self
+        manager._fixupParents(self)
+
     def log_levels_covered(self, name='', level=None, external=None):
         """Returns a list of range 2-tuples for ranges covered for the named (or current) logger.
         Both 'name' and 'level' will default to current Logger name and level if not given.
@@ -841,40 +840,6 @@ class CloudLog(logging.Logger):
         fmt = cls.clean_formatter(fmt)
         handler.setFormatter(fmt)
         return handler
-
-    @staticmethod
-    def move_handlers(source, target, log_level=None):
-        """Move all the google.cloud.logging handlers from source to target logger, applying log_level if provided. """
-        if not all(isinstance(logger, logging.getLoggerClass()) for logger in (source, target)):
-            raise ValueError('Both source and target must be loggers. ')
-        stay, move = [], []
-        for handler in source.handlers:
-            if isinstance(handler, CloudLoggingHandler):
-                if log_level:
-                    handler.level = log_level
-                move.append(handler)
-            else:
-                stay.append(handler)
-        if move:
-            target.handlers.extend(move)
-            source.handlers = stay
-        return
-
-    @staticmethod
-    def get_named_handler(name="python", logger=logging.root):
-        """Returns the CloudLoggingHandler with the matching name attached to the provided logger. """
-        try:
-            handle = logging._handlers.get(name)
-            return handle
-        except Exception as e:
-            logging.exception(e)
-            while logger:
-                handlers = getattr(logger, 'handlers', [])
-                for handle in handlers:
-                    if handle.name == name:
-                        return handle
-                logger = logger.parent
-        return None
 
     @classmethod
     def make_base_logger(cls, name=None, level=None, res=None, client=None, **kwargs):
