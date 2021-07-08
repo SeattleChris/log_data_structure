@@ -435,7 +435,24 @@ class CloudLog(logging.Logger):
         self.add_loggerDict(replace)
 
     @classmethod
-    def basicConfig(cls, config=None, **kwargs):
+    def basicConfig(cls, config=None, config_overrides={}, **kwargs):
+        """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
+        Input:
+            config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
+            List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
+            All other kwargs will be used for labels and sent to logging.basicConfig.
+            If not set, the defaults for those in the list will be determined by:
+            handlers: initialized as an empty list. Allows for adding other handlers to the root logger.
+            debug, testing: from config.
+            level, high_level, log_names, res_type: from CloudLog class attributes.
+            resource, labels: constructed from config/environ and kwarg values (along with res_type).
+        Modifies:
+            CloudLog is set as the LoggerClass for logging.
+            logging.root initialized with level and high/low handlers that are set with log_names overrides.
+            logging.root is given some attributes with a structure of _config_*. These are also included in the return.
+        Returns:
+            dict of settings and objects used to configure loggers.
+        """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
         cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
         config = cls.config_as_dict(config)
