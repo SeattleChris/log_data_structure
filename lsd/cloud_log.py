@@ -612,7 +612,9 @@ class CloudLog(logging.Logger):
         try:
             stdout_filter = targets[0]
         except IndexError:
-            high_level = getattr(logging.root, '_config_high_level', cls.DEFAULT_HIGH_LEVEL)
+            if high_level is None and check_global:
+                high_level = getattr(logging.root, '_config_high_level', None)
+            high_level = high_level or cls.DEFAULT_HIGH_LEVEL
             stdout_filter = LowPassFilter(name='', level=high_level, title='stdout')
             low_handler.addFilter(stdout_filter)
         return stdout_filter
