@@ -553,8 +553,11 @@ class CloudLog(logging.Logger):
             else:  # isinstance(log_client, cloud_logging.Client):
                 CloudLog.add_report_log(report_names)
                 root_handlers = logging.root.handlers
-                root_handlers = CloudLog.high_low_split_handlers(base_level, cloud_level, root_handlers)
-                logging.root.handlers = root_handlers
+                names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
+                needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
+                if not all(ea in names_root_handlers for ea in needed_root_handler_names):
+                    root_handlers = CloudLog.high_low_split_handlers(base_level, high_level, root_handlers)
+                    logging.root.handlers = root_handlers
         if not testing:
             app_handler = CloudLog.make_handler(app_handler_name, high_level, res, log_client)
             app.logger.addHandler(app_handler)
