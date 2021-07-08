@@ -1002,7 +1002,7 @@ class CloudLog(logging.Logger):
             print("--------------------------------------------------")
 
 
-def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, config=None, extra=None):
+def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, config=None, extra_log_names=None):
     """Function to setup logging with google.cloud.logging when not on Google Cloud App Standard. """
     log_client = CloudLog.make_client(service_account_path)
     log_client.get_default_handler()
@@ -1018,9 +1018,9 @@ def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, c
     resource = CloudLog.make_resource(config, CloudLog.DEFAULT_RESOURCE_TYPE)
     handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_log_level, resource, log_client, fmt=fmt)
     logging.root.addHandler(handler)
-    if extra is None:
-        extra = []
-    elif isinstance(extra, str):
-        extra = [extra]
-    cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra]
+    if extra_log_names is None:
+        extra_log_names = []
+    elif isinstance(extra_log_names, str):
+        extra_log_names = [extra_log_names]
+    cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra_log_names]
     return (log_client, *cloud_logs)
