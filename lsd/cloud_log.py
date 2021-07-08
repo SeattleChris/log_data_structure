@@ -497,11 +497,13 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
-        build = ' CloudLog setup after instantiating app on build: {} '.format(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
+        """Called after Flask app is initiated. Expected 'log_setup' from cls.basicConfig, or does similar work. """
+        app_version = app.config.get('GAE_VERSION', 'UNKNOWN VERSION')
+        build = ' CloudLog setup after instantiating app on build: {} '.format(app_version)
         logging.info('{:*^74}'.format(build))
         testing = app.testing
         debug = app.debug
-        test_log_setup = debug
+        test_log_setup = debug  # TODO: Update after creating and testing module.
         if isinstance(log_names, str):
             log_names = [log_names]
         cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -515,7 +517,7 @@ class CloudLog(logging.Logger):
             standard_env = getattr(config, 'standard_env', None)
             cred_path = cred_path or getattr(config, cred_var, None)
         base_level = log_setup.get('base_level', CloudLog.DEBUG_LOG_LEVEL if debug else CloudLog.DEFAULT_LEVEL)
-        cloud_level = log_setup.get('high_level', CloudLog.DEFAULT_HIGH_LEVEL)
+        high_level = log_setup.get('high_level', CloudLog.DEFAULT_HIGH_LEVEL)
         log_client = log_setup.get('log_client', None)
         res = log_setup.get('resource', None)
         labels = log_setup.get('labels', {})
@@ -534,12 +536,12 @@ class CloudLog(logging.Logger):
         if testing:
             pass
         elif not standard_env:
-            log_client, *extra_loggers = setup_cloud_logging(cred_path, base_level, cloud_level, config, log_names)
+            log_client, *extra_loggers = setup_cloud_logging(cred_path, base_level, high_level, config, log_names)
         elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
             log_client = CloudLog.make_client(cred_path, resource=res, labels=labels, config=config)
             report_names, app_handler_name = CloudLog.process_names([__name__, *log_names])
             app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
-            low_filter = LowPassFilter('', cloud_level, title='stdout')  # Do not log at this level or higher.
+            low_filter = LowPassFilter('', high_level, title='stdout')  # Do not log at this level or higher.
             if isinstance(log_client, StreamClient):
                 low_app_name = app_handler_name + '_low'
                 low_handler = CloudLog.make_handler(low_app_name, base_level, res, log_client, stream='stdout')
@@ -552,7 +554,7 @@ class CloudLog(logging.Logger):
                 root_handlers = CloudLog.high_low_split_handlers(base_level, cloud_level, root_handlers)
                 logging.root.handlers = root_handlers
         if not testing:
-            app_handler = CloudLog.make_handler(app_handler_name, cloud_level, res, log_client)
+            app_handler = CloudLog.make_handler(app_handler_name, high_level, res, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
                 for name in log_names:
@@ -566,8 +568,7 @@ class CloudLog(logging.Logger):
                 c_log = CloudLog(name, base_level, automate=True, resource=res, client=c_client)
                 # c_log is now set for: stderr out, propagate=False
                 c_log.propagate = True
-                # app.c_log = c_log
-                extra_loggers.append(c_log)
+                extra_loggers.append(c_log)  # app.c_log = c_log
                 log_names.append(name)
         app.log_client = log_client
         app._resource_test = res
