@@ -354,6 +354,8 @@ class CloudLog(logging.Logger):
     APP_HANDLER_NAME = 'app'
     DEFAULT_LOGGER_NAME = None
     DEFAULT_HANDLER_NAME = None
+    SPLIT_LOW_NAME = 'root_low'
+    SPLIT_HIGH_NAME = 'root_high'
     DEBUG_LOG_LEVEL = logging.DEBUG
     DEFAULT_LEVEL = logging.INFO
     DEFAULT_HIGH_LEVEL = logging.WARNING
@@ -578,24 +580,26 @@ class CloudLog(logging.Logger):
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
-    def get_ignore_filter(cls):
-        """The 'root_high' handler may need to ignore certain loggers that are being sent to stdout by 'root_low'. """
-        root_high = logging._handlers.get('root_high', None)
-        if not root_high:
-            raise LookupError("Could not find expected 'root_high' handler. ")
-        targets = [filter for filter in root_high.filters if isinstance(filter, IgnoreFilter)]
+    def get_ignore_filter(cls, handler_name=None):
+        """A high handler may need to ignore certain loggers that are being logged due to stdout_filter. """
+        handler_name = handler_name or cls.SPLIT_HIGH_NAME
+        high_handler = logging._handlers.get(handler_name, None)
+        if not high_handler:
+            raise LookupError(f"Could not find expected {handler_name} high handler. ")
+        targets = [filter for filter in high_handler.filters if isinstance(filter, IgnoreFilter)]
         if len(targets) > 1:
-            warnings.warn("More than one possible IgnoreFilter attached to 'root_high' handler. Using the first one. ")
+            warnings.warn(f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. ")
         try:
             ignore_filter = targets[0]
         except IndexError:
             ignore_filter = IgnoreFilter()
-            root_high.addFilter(ignore_filter)
+            high_handler.addFilter(ignore_filter)
         return ignore_filter
 
     @classmethod
-    def get_stdout_filter(cls, handler_name='root_low'):
-        """The filter for 'root_low' stdout handler. Allows low level logs AND to report logs recorded elsewhere. """
+    def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=True):
+        """The filter for stdout low handler. Allows low level logs AND to report logs recorded elsewhere. """
+        handler_name = handler_name or cls.SPLIT_LOW_NAME
         low_handler = logging._handlers.get(handler_name, None)
         if not low_handler:
             raise LookupError(f"Could not find expected {handler_name} handler. ")
@@ -611,10 +615,12 @@ class CloudLog(logging.Logger):
         return stdout_filter
 
     @classmethod
-    def add_report_log(cls, name):
+    def add_report_log(cls, name, low_name=None, high_name=None, high_level=None):
         """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
-        stdout_filter = cls.get_stdout_filter()
-        ignore_filter = cls.get_ignore_filter()
+        low_name = low_name or cls.SPLIT_LOW_NAME
+        high_name = high_name or cls.SPLIT_HIGH_NAME
+        stdout_filter = cls.get_stdout_filter(high_level, low_name)
+        ignore_filter = cls.get_ignore_filter(high_name)
         rv = stdout_filter.allow(name)
         if isinstance(rv, str):
             rv = [rv]
@@ -642,8 +648,10 @@ class CloudLog(logging.Logger):
         return report_names, app_handler_name
 
     @classmethod
-    def high_low_split_handlers(cls, base_level, high_level, handlers=[], low_name='root_low', high_name='root_high'):
+    def high_low_split_handlers(cls, base_level, high_level, handlers=[], low_name=None, high_name=None):
         """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
+        low_name = low_name or cls.SPLIT_LOW_NAME
+        high_name = high_name or cls.SPLIT_HIGH_NAME
         low_handler = logging.StreamHandler(stdout)
         low_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
         low_handler.addFilter(low_filter)
