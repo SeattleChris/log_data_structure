@@ -439,6 +439,7 @@ class CloudLog(logging.Logger):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
             config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
+            config_overrides is a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
             If not set, the defaults for those in the list will be determined by:
@@ -454,10 +455,11 @@ class CloudLog(logging.Logger):
             dict of settings and objects used to configure loggers.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        cred_path = getattr(config, 'GOOGLE_APPLICATION_CREDENTIALS', None)
         config = cls.config_as_dict(config)
-        debug = kwargs.pop('debug', None) or config.get('DEBUG', None)
-        testing = kwargs.pop('testing', None) or config.get('TESTING', None)
+        config.update(config_overrides)
+        cred_path = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
+        debug = kwargs.pop('debug', config.get('DEBUG', None))
+        testing = kwargs.pop('testing', config.get('TESTING', None))
         if testing:
             return False
         base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
