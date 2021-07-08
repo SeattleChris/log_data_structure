@@ -496,11 +496,11 @@ class CloudLog(logging.Logger):
         return cloud_config
 
     @classmethod
-    def attach_loggers(app, config=None, log_setup={}, log_names=[], test_log_setup=False):
+    def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
         build = ' CloudLog setup after instantiating app on build: {} '.format(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
         logging.info('{:*^74}'.format(build))
-        testing = app.config.get('testing', False)
-        debug = app.config.get('debug', False)
+        testing = app.testing
+        debug = app.debug
         test_log_setup = debug
         if isinstance(log_names, str):
             log_names = [log_names]
@@ -972,10 +972,10 @@ class CloudLog(logging.Logger):
 
         if not app.got_first_request:
             app.try_trigger_before_first_request_functions()
-        if logger_names is not None and not logger_names:
-            logger_names = getattr(app, 'log_list', [])
-        elif logger_names is None:
+        if logger_names is None:
             logger_names = []
+        elif not logger_names:
+            logger_names = getattr(app, 'log_list', [])
         app_loggers = [(name, getattr(app, name)) for name in logger_names if hasattr(app, name)]
         print(f"Found {len(app_loggers)} named attachments. ")
         app_loggers = [ea for ea in app_loggers if ea[1] is not None]
