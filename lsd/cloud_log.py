@@ -543,11 +543,11 @@ class CloudLog(logging.Logger):
             log_client = CloudLog.make_client(cred_path, resource=res, labels=labels, config=config)
             report_names, app_handler_name = CloudLog.process_names([__name__, *log_names])
             app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
-            low_filter = LowPassFilter('', high_level, title='stdout')  # Do not log at this level or higher.
             if isinstance(log_client, StreamClient):
                 low_app_name = app_handler_name + '_low'
                 low_handler = CloudLog.make_handler(low_app_name, base_level, res, log_client, stream='stdout')
-                low_handler.addFilter(low_filter)
+                stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
+                low_handler.addFilter(stdout_filter)
                 app.logger.addHandler(low_handler)
                 app.logger.propagate = False
             else:  # isinstance(log_client, cloud_logging.Client):
@@ -600,6 +600,11 @@ class CloudLog(logging.Logger):
         return ignore_filter
 
     @classmethod
+    def make_stdout_filter(cls, level=None):
+        """Allows named logs and logs below level. Applied to a handler with stdout, typically on root logger. """
+        return LowPassFilter(name='', level=level, title='stdout')  # '' name means it applies to all considered logs.
+
+    @classmethod
     def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=False):
         """The filter for stdout low handler. Allows low level logs AND to report logs recorded elsewhere. """
         handler_name = handler_name or cls.SPLIT_LOW_NAME
@@ -615,7 +620,7 @@ class CloudLog(logging.Logger):
             if high_level is None and check_global:
                 high_level = getattr(logging.root, '_config_high_level', None)
             high_level = high_level or cls.DEFAULT_HIGH_LEVEL
-            stdout_filter = LowPassFilter(name='', level=high_level, title='stdout')
+            stdout_filter = cls.make_stdout_filter(high_level)
             low_handler.addFilter(stdout_filter)
         return stdout_filter
 
@@ -659,7 +664,7 @@ class CloudLog(logging.Logger):
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
         low_handler = logging.StreamHandler(stdout)
-        stdout_filter = LowPassFilter('', high_level, 'stdout')  # '' name means it applies to all logs pasing through.
+        stdout_filter = cls.make_stdout_filter(high_level)
         low_handler.addFilter(stdout_filter)
         low_handler.setLevel(base_level)
         low_handler.set_name(low_name)
