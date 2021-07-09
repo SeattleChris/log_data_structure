@@ -854,16 +854,19 @@ class CloudLog(logging.Logger):
             resource = resource or {}
             label_overrides = label_overrides or {}
         if resource and isinstance(resource, dict):
+            try:
             resource = Resource._from_dict(resource)
-        labels = getattr(resource, 'labels', {})
-        labels.update(kwargs)
-        labels.update(label_overrides)
+            except Exception as e:
+                print(e)
+                resource = None
         if not isinstance(resource, Resource):
-            if not isinstance(resource, dict):
+            if resource:
                 raise TypeError(f"The resource parameter must be a Resource, dict, or None. Did not work: {resource} ")
-            resource.update(labels)
-            resource = cls.make_resource(config, res_type, **resource)
-        labels = getattr(resource, 'labels', {**cls.get_environment_labels(), **labels})
+            res_labels = {**kwargs}
+            res_labels.update(label_overrides)
+            resource = cls.make_resource(config, res_type, **res_labels)
+        labels = getattr(resource, 'labels', cls.get_environment_labels())
+        labels.update(kwargs)
         labels.update(label_overrides)
         return resource, labels, kwargs
 
