@@ -437,10 +437,11 @@ class CloudLog(logging.Logger):
         self.add_loggerDict(replace)
 
     @classmethod
-    def basicConfig(cls, config=None, config_overrides={}, **kwargs):
+    def basicConfig(cls, config=None, config_overrides={}, add_config_dict=None, **kwargs):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
             config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
+            add_config_dict is a list of attributes on the config object, or a dict, to update config_as_dict response.
             config_overrides is a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
@@ -457,7 +458,7 @@ class CloudLog(logging.Logger):
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = cls.config_as_dict(config)
+        config = cls.config_as_dict(config, add_config_dict)
         config.update(config_overrides)
         cred_path = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
@@ -816,12 +817,16 @@ class CloudLog(logging.Logger):
         return {k: v for k, v in labels.items() if v}
 
     @classmethod
-    def config_as_dict(cls, config):
+    def config_as_dict(cls, config, add_to_dict=None):
         """Takes a Config object or a dict. If input is None, returns os.environ. Otherwise, returns a dict. """
+        if add_to_dict and not isinstance(add_to_dict, dict):  # must be an iterable of config object attributes.
+            add_to_dict = {getattr(config, key, None) for key in add_to_dict}
         if config and not isinstance(config, dict):
             config = getattr(config, '__dict__', None)
         if not config:
             config = environ
+        if add_to_dict:
+            config.update(add_to_dict)
         return config
 
     @classmethod
