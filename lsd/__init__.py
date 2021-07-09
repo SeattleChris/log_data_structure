@@ -21,25 +21,12 @@ def create_app(config, config_overrides=dict()):
     @app.shell_context_processor
     def expected_shell_imports():
         from pprint import pprint
-        import logging
         import inspect
-        from .cloud_log import CloudLog, LowPassFilter, StreamClient, StreamTransport
 
-        app.try_trigger_before_first_request_functions()
-        logDict = logging.root.manager.loggerDict
-        all_loggers = [logger for name, logger in logDict.items()]
-
-        return {
-            'pprint': pprint,
-            'CloudLog': CloudLog,
-            'LowPassFilter': LowPassFilter,
-            'StreamClient': StreamClient,
-            'StreamTransport': StreamTransport,
-            'all_loggers': all_loggers,
-            'logDict': logDict,
-            'logging': logging,
-            'inspect': inspect,
-            }
+        rv = {'pprint': pprint, 'inspect': inspect, }
+        cl_shell = CloudLog.shell_context(app)
+        rv.update(cl_shell)
+        return rv
 
     @app.errorhandler(500)
     def server_error(e):

@@ -1111,6 +1111,23 @@ class CloudLog(logging.Logger):
             pprint(c.__dict__)
             print("--------------------------------------------------")
 
+    @staticmethod
+    def shell_context(app):
+        """Triggers a first request. Returns a dictionary of key classes for shell_context_processor. """
+        app.try_trigger_before_first_request_functions()
+        logDict = logging.root.manager.loggerDict
+        all_loggers = [logger for name, logger in logDict.items()]
+
+        return {
+            'CloudLog': CloudLog,
+            'LowPassFilter': LowPassFilter,
+            'StreamClient': StreamClient,
+            'StreamTransport': StreamTransport,
+            'all_loggers': all_loggers,
+            'logDict': logDict,
+            'logging': logging,
+            }
+
 
 def setup_cloud_logging(service_account_path, low_level, high_level, config=None, extra_log_names=None):
     """Function to setup logging with google.cloud.logging when not on Google Cloud App Standard. """
