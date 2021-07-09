@@ -426,8 +426,8 @@ class CloudLog(logging.Logger):
         if client is None:
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, **client_kwargs, **labels)
-        if isinstance(client, cloud_logging.Client):  # Most likely expeected outcome.
-            self.add_report_log(name)
+        if isinstance(client, cloud_logging.Client):  # Most likely expeected outcome - logs to external stream.
+            self.add_report_log(name, check_global=True)
         elif isinstance(client, StreamClient):
             client.update_attachments(resource, labels, handler_name)
             self.propagate = False
@@ -490,7 +490,7 @@ class CloudLog(logging.Logger):
             return False
         report_names, app_handler_name = cls.process_names(log_names)
         if isinstance(log_client, cloud_logging.Client):
-            cls.add_report_log(report_names)
+            cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             log_client.update_attachments(resource, labels, app_handler_name)
         cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
@@ -551,7 +551,7 @@ class CloudLog(logging.Logger):
                 app.logger.addHandler(low_handler)
                 app.logger.propagate = False
             else:  # isinstance(log_client, cloud_logging.Client):
-                CloudLog.add_report_log(report_names)
+                CloudLog.add_report_log(report_names, high_level)
                 root_handlers = logging.root.handlers
                 names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
                 needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
@@ -566,7 +566,7 @@ class CloudLog(logging.Logger):
                     cur_logger = CloudLog(name, base_level, automate=True, resource=res, client=log_client)
                     cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
                     extra_loggers.append(cur_logger)
-            CloudLog.add_report_log(extra_loggers)
+            CloudLog.add_report_log(extra_loggers, high_level)
             if test_log_setup:
                 name = 'c_log'
                 c_client = StreamClient(name, res, labels)
@@ -600,7 +600,7 @@ class CloudLog(logging.Logger):
         return ignore_filter
 
     @classmethod
-    def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=True):
+    def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=False):
         """The filter for stdout low handler. Allows low level logs AND to report logs recorded elsewhere. """
         handler_name = handler_name or cls.SPLIT_LOW_NAME
         low_handler = logging._handlers.get(handler_name, None)
@@ -620,21 +620,22 @@ class CloudLog(logging.Logger):
         return stdout_filter
 
     @classmethod
-    def add_report_log(cls, name, low_name=None, high_name=None, high_level=None):
+    def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
         """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
-        stdout_filter = cls.get_stdout_filter(high_level, low_name)
+        stdout_filter = cls.get_stdout_filter(high_level, low_name, check_global)
         ignore_filter = cls.get_ignore_filter(high_name)
-        rv = stdout_filter.allow(name)
-        if isinstance(rv, str):
-            rv = [rv]
-        if isinstance(rv, list):
-            result = [ignore_filter.add(ea) for ea in rv]
-            rv = all(bool(ea) for ea in result) and len(result) > 0
+        success = False
+        names = stdout_filter.allow(name_or_loggers)
+        if isinstance(names, str):
+            names = [names]
+        if isinstance(names, list):
+            success = [ignore_filter.add(name) for name in names]
+            success = all(bool(ea) for ea in success) and len(success) > 0
         else:
             raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
-        return bool(rv)
+        return success
 
     @classmethod
     def process_names(cls, log_names):
