@@ -1125,25 +1125,37 @@ class CloudLog(logging.Logger):
             print("--------------------------------------------------")
 
 
-def setup_cloud_logging(service_account_path, base_log_level, cloud_log_level, config=None, extra_log_names=None):
+def setup_cloud_logging(service_account_path, low_level, high_level, config=None, extra_log_names=None):
     """Function to setup logging with google.cloud.logging when not on Google Cloud App Standard. """
     log_client = CloudLog.make_client(service_account_path)
     log_client.get_default_handler()
-    log_client.setup_logging(log_level=base_log_level)  # log_level sets the logger, not the handler.
-    # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
-    root_handler = logging.root.handlers[0]
-    low_filter = LowPassFilter(CloudLog.APP_LOGGER_NAME, cloud_log_level, 'stdout')
-    root_handler.addFilter(low_filter)
-    fmt = getattr(root_handler, 'formatter', None)
-    if not fmt:
-        fmt = DEFAULT_FORMAT
-        root_handler.setFormatter(fmt)
+    log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
     resource = CloudLog.make_resource(config, CloudLog.DEFAULT_RESOURCE_TYPE)
-    handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, cloud_log_level, resource, log_client, fmt=fmt)
+    # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
+    handlers = logging.root.handlers.copy()
+    fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
+    low_handler, high_handler, *handlers = CloudLog.high_low_split_handlers(low_level, high_level, handlers)
+    low_handler.setFormatter(fmt)
+    low_filter = low_handler.filters[0]
+    low_filter.allow(CloudLog.APP_LOGGER_NAME)
+    ignore_filter = high_handler.filters[0]
+    ignore_filter.add(CloudLog.APP_LOGGER_NAME)
+    logging.root.handlers.clear()
+    logging.root.addHandler(low_handler)
+    if len(handlers):
+        for handler in handlers:
+            handler.addFilter(ignore_filter)
+            if handler.level < high_level:
+                handler.setLevel(high_level)
+            logging.root.addHandler(handler)
+    else:
+        high_handler.setFormatter(fmt)
+        logging.root.addHandler(high_handler)
+    handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, high_level, resource, log_client, fmt=fmt)
     logging.root.addHandler(handler)
     if extra_log_names is None:
         extra_log_names = []
     elif isinstance(extra_log_names, str):
         extra_log_names = [extra_log_names]
-    cloud_logs = [CloudLog(name, base_log_level, resource, log_client, fmt=fmt) for name in extra_log_names]
+    cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in extra_log_names]
     return (log_client, *cloud_logs)
