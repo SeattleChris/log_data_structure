@@ -797,7 +797,7 @@ class CloudLog(logging.Logger):
     def get_environment_labels(cls, config=environ):
         """Using the config dict, or environment, Returns a dict of context parameters if their values are truthy. """
         project_id = config.get('PROJECT_ID')
-        project = config.get('GOOGLE_CLOUD_PROJECT') or config.get('PROJECT')
+        project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT')
         if project and project_id and project != project_id:
             warnings.warn("The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id))
         if not any((project, project_id)):
