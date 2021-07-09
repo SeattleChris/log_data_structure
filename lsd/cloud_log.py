@@ -454,7 +454,7 @@ class CloudLog(logging.Logger):
             logging.root initialized with level and high/low handlers that are set with log_names overrides.
             logging.root is given some attributes with a structure of _config_*. These are also included in the return.
         Returns:
-            dict of settings and objects used to configure loggers.
+            dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
         config = cls.config_as_dict(config)
@@ -862,6 +862,40 @@ class CloudLog(logging.Logger):
         labels.update(label_overrides)
         return resource, labels, kwargs
 
+    @classmethod
+    def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
+        """The handler uses cloud logging output, or standard library stream, depending on the given client. """
+        name = cls.normalize_handler_name(name)
+        stream = cls.clean_stream(kwargs.pop('stream', None))
+        fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
+        if client is None:
+            client = getattr(logging.root, '_config_log_client', None)
+        if not client:
+            raise TypeError("Expected a Client instance, or an already attached Client. ")
+        if res is None:
+            res = getattr(logging.root, '_config_resource', None)
+            res = Resource._from_dict(res) if isinstance(res, dict) else res
+        labels = kwargs.pop('labels', None)
+        if not labels:
+            labels = getattr(logging.root, '_config_labels', {})
+        if isinstance(res, Resource):
+            labels.update(getattr(res, 'labels', {}))
+        if not labels:
+            labels = cls.get_environment_labels()
+        labels.update(kwargs)
+        handler_kwargs = {'name': name, 'labels': labels}
+        if res:
+            handler_kwargs['resource'] = res
+        if stream:
+            handler_kwargs['stream'] = stream
+        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler, or stream if StreamClient.
+        if level:
+            level = cls.normalize_level(level)
+            handler.setLevel(level)
+        fmt = cls.clean_formatter(fmt)
+        handler.setFormatter(fmt)
+        return handler
+
     @property
     def project(self):
         """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
@@ -927,63 +961,6 @@ class CloudLog(logging.Logger):
             ranges = normal_ranges
         reduced = reduce_range_overlaps(ranges)
         return ranges, reduced
-
-    @classmethod
-    def make_handler(cls, name=None, level=None, res=None, client=None, **kwargs):
-        """The handler uses cloud logging output, or standard library stream, depending on the given client. """
-        name = cls.normalize_handler_name(name)
-        stream = cls.clean_stream(kwargs.pop('stream', None))
-        fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        if client is None:
-            client = getattr(logging.root, '_config_log_client', None)
-        if not client:
-            raise TypeError("Expected a Client instance, or an already attached Client. ")
-        if res is None:
-            res = getattr(logging.root, '_config_resource', None)
-            res = Resource._from_dict(res) if isinstance(res, dict) else res
-        labels = kwargs.pop('labels', None)
-        if not labels:
-            labels = getattr(logging.root, '_config_labels', {})
-        if isinstance(res, Resource):
-            labels.update(getattr(res, 'labels', {}))
-        if not labels:
-            labels = cls.get_environment_labels()
-        labels.update(kwargs)
-        handler_kwargs = {'name': name, 'labels': labels}
-        if res:
-            handler_kwargs['resource'] = res
-        if stream:
-            handler_kwargs['stream'] = stream
-        handler = CloudParamHandler(client, **handler_kwargs)  # CloudLoggingHandler, or stream if StreamClient.
-        if level:
-            level = cls.normalize_level(level)
-            handler.setLevel(level)
-        fmt = cls.clean_formatter(fmt)
-        handler.setFormatter(fmt)
-        return handler
-
-    @classmethod
-    def make_base_logger(cls, name=None, level=None, res=None, client=None, **kwargs):
-        """Used to create a logger with a cloud handler when a CloudLog instance is not desired. """
-        name = cls.normalize_logger_name(name)
-        level = cls.normalize_level(level)
-        logger = None
-        if logging.getLoggerClass() == cls:
-            try:
-                logger = logging.Logger(name, level)
-                cls.add_loggerDict(logger, replace=False)
-            except Exception as e:
-                logging.exception(e)
-                logger = None
-        if not logger:
-            logger = logging.getLogger(name)
-            logger.setLevel(level)
-        fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
-        handler_name = kwargs.pop('handler_hame', name)
-        handler_level = kwargs.pop('handler_level', None)
-        handler = cls.make_handler(handler_name, handler_level, res, client, fmt=fmt, **kwargs)
-        logger.addHandler(handler)
-        return logger
 
     @staticmethod
     def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):
@@ -1164,3 +1141,26 @@ def setup_cloud_logging(service_account_path, low_level, high_level, config=None
         extra_log_names = [extra_log_names]
     cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in extra_log_names]
     return (log_client, *cloud_logs)
+
+
+def make_base_logger(CloudLog, name=None, level=None, res=None, client=None, **kwargs):
+    """DEPRECATED. Used to create a logger with a cloud handler when a CloudLog instance is not desired. """
+    name = CloudLog.normalize_logger_name(name)
+    level = CloudLog.normalize_level(level)
+    logger = None
+    if logging.getLoggerClass() == CloudLog:
+        try:
+            logger = logging.Logger(name, level)
+            CloudLog.add_loggerDict(logger, replace=False)
+        except Exception as e:
+            logging.exception(e)
+            logger = None
+    if not logger:
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+    fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
+    handler_name = kwargs.pop('handler_hame', name)
+    handler_level = kwargs.pop('handler_level', None)
+    handler = CloudLog.make_handler(handler_name, handler_level, res, client, fmt=fmt, **kwargs)
+    logger.addHandler(handler)
+    return logger
