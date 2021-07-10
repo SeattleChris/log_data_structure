@@ -801,11 +801,15 @@ class CloudLog(logging.Logger):
     @classmethod
     def get_resource_fields(cls, res_type=DEFAULT_RESOURCE_TYPE, **settings):
         """For a given resource type, extract the expected required fields from the kwargs passed and project_id. """
-        project_id = settings.pop('project_id', None) or settings.pop('project', None)
-        if not project_id:
-            project_id = environ.get('PROJECT_ID') or environ.get('PROJECT') or environ.get('GOOGLE_CLOUD_PROJECT')
-        project_id = project_id or ''
-        if not project_id:
+        env_priority_keys = ('PROJECT_ID', 'PROJECT', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT')
+        project = settings.pop('project', None)
+        project_id = settings.pop('project_id', None) or project
+        try:
+            env_project_value = (environ.get(ea, None) for ea in env_priority_keys)
+            while not project_id:
+                project_id = next(env_project_value)
+        except StopIteration:
+            project_id = ''
             raise Warning("The important project id has not been found from passed settings or environment. ")
         pid = ('project_id', 'project')
         for key in cls.RESOURCE_REQUIRED_FIELDS[res_type]:
