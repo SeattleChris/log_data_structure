@@ -9,7 +9,7 @@ from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 from google.cloud.logging_v2.handlers.transports import BackgroundThreadTransport
 from google.oauth2 import service_account
 from google.cloud.logging import Resource
-from .log_helpers import _clean_level
+from .log_helpers import config_dict, _clean_level
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
@@ -462,7 +462,7 @@ class CloudLog(logging.Logger):
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = cls.config_dict(config, add_config_dict)
+        config = config_dict(config, add_config_dict)
         config.update(config_overrides)
         cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
@@ -825,31 +825,10 @@ class CloudLog(logging.Logger):
             }
         return {k: v for k, v in labels.items() if v}
 
-    @staticmethod
-    def config_dict(config, add_to_dict={}):
-        """Returns a dict or dict like object (os.environ) with optional updated values.
-        Input:
-            config: Can be a dict, or None to use os.environ, otherwise uses config.__dict__.
-            add_to_dict: Either a dict, or a list/tuple of config class attributes to create a dict.
-        Modifies:
-            if add_to_dict is given, it may modify the input config dict or os.environ.
-        Output:
-            A dict, or os.environ (which has dict like methods), updated with values due to optional add_to_dict input.
-        """
-        if add_to_dict and not isinstance(add_to_dict, dict):  # must be an iterable of config object attributes.
-            add_to_dict = {getattr(config, key, None) for key in add_to_dict}
-        if config and not isinstance(config, dict):
-            config = getattr(config, '__dict__', None)
-        if not config:
-            config = environ
-        if add_to_dict:
-            config.update(add_to_dict)
-        return config
-
     @classmethod
     def make_resource(cls, config, res_type=DEFAULT_RESOURCE_TYPE, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
-        config = cls.config_dict(config)
+        config = config_dict(config)
         labels = cls.get_environment_labels(config)
         label_overrides = kwargs.pop('labels', {})
         labels.update(kwargs)
