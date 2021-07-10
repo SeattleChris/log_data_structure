@@ -1,33 +1,18 @@
 import logging
 import warnings
 from sys import stderr, stdout
+from os import environ
+from datetime import datetime as dt
 from flask import json
 from google.cloud import logging as cloud_logging
 from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 from google.cloud.logging_v2.handlers.transports import BackgroundThreadTransport
 from google.oauth2 import service_account
 from google.cloud.logging import Resource
-from os import environ
-from datetime import datetime as dt
+from .log_helpers import _clean_level
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
-NON_EXISTING_LOGGER_NAME = 'name-that-does-not-match-any-logger'
-
-
-def _clean_level(level):
-    """Used if logging._checkLevel is not available. """
-    name_to_level = logging._nameToLevel
-    if isinstance(level, str):
-        level = name_to_level.get(level.upper(), None)
-        if level is None:
-            raise ValueError("The level string was not a recognized value. ")
-    elif isinstance(level, int):
-        if level not in name_to_level.values():
-            raise ValueError("The level integer was not a recognized value. ")
-    else:
-        raise TypeError("The level, or default level, must be an appropriate str or int value. ")
-    return level
 
 
 class IgnoreFilter(logging.Filter):
@@ -104,8 +89,6 @@ class LowPassFilter(logging.Filter):
 
     def __repr__(self):
         name = self.name or 'All'
-        if name == NON_EXISTING_LOGGER_NAME:
-            name = 'None'
         allowed = ' '
         if len(self._allowed):
             allowed = ' and any ' + ', '.join(self._allowed)
@@ -479,9 +462,9 @@ class CloudLog(logging.Logger):
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = cls.config_as_dict(config, add_config_dict)
+        config = cls.config_dict(config, add_config_dict)
         config.update(config_overrides)
-        cred_path = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
+        cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
         testing = kwargs.pop('testing', config.get('TESTING', None))
         if testing:
@@ -503,7 +486,7 @@ class CloudLog(logging.Logger):
             root = logging.root
             root._config_resource = resource._to_dict()
             root._config_lables = labels
-            root._config_log_client = log_client
+            root._config_log_client = client
             root._config_base_level = base_level
             root._config_high_level = high_level
         except Exception as e:
@@ -511,11 +494,11 @@ class CloudLog(logging.Logger):
             logging.exception(e)
             return False
         report_names, app_handler_name = cls.process_names(log_names)
-        if isinstance(log_client, cloud_logging.Client):
+        if isinstance(client, cloud_logging.Client):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
-            log_client.update_attachments(resource, labels, app_handler_name)
-        cloud_config = {'log_client': log_client, 'base_level': base_level, 'high_level': high_level}
+            client.update_attachments(resource, labels, app_handler_name)
+        cloud_config = {'log_client': client, 'base_level': base_level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
@@ -800,8 +783,8 @@ class CloudLog(logging.Logger):
             log_client.update_attachments(resource, labels)
         return log_client
 
-    @classmethod
-    def get_resource_fields(cls, res_type=DEFAULT_RESOURCE_TYPE, **settings):
+    @staticmethod
+    def get_resource_fields(res_type=DEFAULT_RESOURCE_TYPE, **settings):
         """For a given resource type, extract the expected required fields from the kwargs passed and project_id. """
         env_priority_keys = ('PROJECT_ID', 'PROJECT', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT')
         project = settings.pop('project', None)
@@ -814,15 +797,15 @@ class CloudLog(logging.Logger):
             project_id = ''
             raise Warning("The important project id has not been found from passed settings or environment. ")
         pid = ('project_id', 'project')
-        for key in cls.RESOURCE_REQUIRED_FIELDS[res_type]:
+        for key in CloudLog.RESOURCE_REQUIRED_FIELDS[res_type]:
             backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
                 warnings.warn("Could not find {} for Resource {}. ".format(key, res_type))
             settings.setdefault(key, backup_value)
         return res_type, settings
 
-    @classmethod
-    def get_environment_labels(cls, config=environ):
+    @staticmethod
+    def get_environment_labels(config=environ):
         """Using the config dict, or environment, Returns a dict of context parameters if their values are truthy. """
         project_id = config.get('PROJECT_ID')
         project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT')
@@ -843,9 +826,17 @@ class CloudLog(logging.Logger):
             }
         return {k: v for k, v in labels.items() if v}
 
-    @classmethod
-    def config_as_dict(cls, config, add_to_dict=None):
-        """Takes a Config object or a dict. If input is None, returns os.environ. Otherwise, returns a dict. """
+    @staticmethod
+    def config_dict(config, add_to_dict={}):
+        """Returns a dict or dict like object (os.environ) with optional updated values.
+        Input:
+            config: Can be a dict, or None to use os.environ, otherwise uses config.__dict__.
+            add_to_dict: Either a dict, or a list/tuple of config class attributes to create a dict.
+        Modifies:
+            if add_to_dict is given, it may modify the input config dict or os.environ.
+        Output:
+            A dict, or os.environ (which has dict like methods), updated with values due to optional add_to_dict input.
+        """
         if add_to_dict and not isinstance(add_to_dict, dict):  # must be an iterable of config object attributes.
             add_to_dict = {getattr(config, key, None) for key in add_to_dict}
         if config and not isinstance(config, dict):
@@ -859,7 +850,7 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_resource(cls, config, res_type=DEFAULT_RESOURCE_TYPE, **kwargs):
         """Creates an appropriate resource to help with logging. The 'config' can be a dict or config.Config object. """
-        config = cls.config_as_dict(config)
+        config = cls.config_dict(config)
         labels = cls.get_environment_labels(config)
         label_overrides = kwargs.pop('labels', {})
         labels.update(kwargs)
@@ -965,12 +956,18 @@ class CloudLog(logging.Logger):
         manager.loggerDict[self.name] = self
         manager._fixupParents(self)
 
-    def log_levels_covered(self, name='', level=None, external=None):
-        """Returns a list of range 2-tuples for ranges covered for the named (or current) logger.
-        Both 'name' and 'level' will default to current Logger name and level if not given.
-        If external is True, only considers LogRecords sent to external (non-standard) log stream.
-        If external is False, excludes LogRecords sent to external log streams.
-        If external is None (default), reports range(s) sent to some log.
+    def levels_covered(self, name='', level=None, external=None, ranges=True, reduced=True):
+        """Returns a list of range 2-tuples for ranges covered for the named logger traversing from current logger.
+        Inputs:
+            Both 'name' and 'level' will default to current Logger name and level if not given.
+            If external is True, only considers LogRecords sent to external (non-standard) log stream.
+            If external is False, excludes LogRecords sent to external log streams.
+            If external is None (default), reports range(s) sent to some output.
+        Outputs, depending on input flags:
+            If ranges is True, reduced is False: Only return the ranges value.
+            If ranges is False, reduced is True: Only return the reduced value.
+            If both are True, return a tuple of both ranges and reduced (in that order).
+            If both are False, raise InputError.
         """
         from .log_helpers import levels_covered
         if not any([ranges, reduced]):
@@ -1183,7 +1180,7 @@ def setup_cloud_logging(service_account_path, low_level, high_level, config=None
     return (log_client, *cloud_logs)
 
 
-def make_base_logger(CloudLog, name=None, level=None, res=None, client=None, **kwargs):
+def make_base_logger(name=None, level=None, res=None, client=None, **kwargs):
     """DEPRECATED. Used to create a logger with a cloud handler when a CloudLog instance is not desired. """
     name = CloudLog.normalize_logger_name(name)
     level = CloudLog.normalize_level(level)
