@@ -495,7 +495,7 @@ class CloudLog(logging.Logger):
         root_handlers = cls.high_low_split_handlers(base_level, high_level, root_handlers)
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
-        log_client = cls.make_client(cred_path, res_label=False, resource=resource, labels=labels, **kwargs)
+        client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
         kwargs['level'] = base_level
         try:
@@ -769,10 +769,10 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
+        if cred_or_path is None and check_global:
+            cred_or_path = getattr(logging.root, '._config_log_client', None)
         if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
             return cred_or_path
-        if res_label is False:
-            check_global = False
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         if 'project' in kwargs:
             client_kwargs['project'] = kwargs['project']
