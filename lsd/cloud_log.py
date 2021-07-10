@@ -420,9 +420,13 @@ class CloudLog(logging.Logger):
             cred_or_path: set to None. Raises ValueError if there is both a client and a cred_or_path.
             labels, (and resource if None): from check_global and constructed (or updated) from kwarg values.
             client_info, client_options: Not used if missing. Used for make_client if client not constructed.
-
+        Modifies current instance:
+            self.client: A google.cloud.logging.Client or StreamClient.
+            self.resource: A dict of a google.cloud.logging.Resource.
+            self.lables: A dict of key-value pairs generally used for resource, but may have additional values.
+            Adds a CloudParamHandler with settings - format, stream (or external log), resource, labels, level, name.
+            Adds this named instance to the LoggerDict of the logging manager (replacing existing depends on 'replace').
         """
-        # After cleaning out special key-words, the remaining kwargs are used for creating Resource and labels.
         name = self.name
         stream = self.clean_stream(kwargs.pop('stream', None))
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
