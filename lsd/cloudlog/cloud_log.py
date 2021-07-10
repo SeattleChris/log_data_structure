@@ -972,30 +972,21 @@ class CloudLog(logging.Logger):
         If external is False, excludes LogRecords sent to external log streams.
         If external is None (default), reports range(s) sent to some log.
         """
-        from .log_helpers import determine_filter_ranges, reduce_range_overlaps
-
+        from .log_helpers import levels_covered
+        if not any([ranges, reduced]):
+            raise ValueError("The levels_covered function should have at least one of ranges or reduced as True. ")
+        if not isinstance(external, (bool, type(None))):
+            raise ValueError("The 'external' parameter must be one of None, True, or False. ")
+        if level is None and not name:
+            level = self.level
+        level = level or 0
         name = name or self.name
-        level = self.level if level is None else level
-        normal_ranges, external_ranges = [], []
-        cur = self
-        while cur:
-            for handler in cur.handlers:
-                cur_level = max((handler.level, level))
-                handler_ranges = determine_filter_ranges(handler.filters, name, cur_level)
-                transport = getattr(handler, 'transport', None)
-                if isinstance(handler, CloudParamHandler) and not isinstance(transport, StreamTransport):
-                    external_ranges.extend(handler_ranges)
-                else:
-                    normal_ranges.extend(handler_ranges)
-            cur = cur.parent if cur.propagate else None
-        if external:
-            ranges = external_ranges
-        elif external is None:
-            ranges = [*normal_ranges, *external_ranges]
-        else:  # external == True
-            ranges = normal_ranges
-        reduced = reduce_range_overlaps(ranges)
-        return ranges, reduced
+        result = levels_covered(self, name, level, external)
+        if ranges and not reduced:
+            return result[0]
+        if reduced and not ranges:
+            return result[1]
+        return result
 
     @staticmethod
     def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):
