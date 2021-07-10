@@ -808,16 +808,15 @@ class CloudLog(logging.Logger):
     def get_environment_labels(config=environ):
         """Using the config dict, or environment, Returns a dict of context parameters if their values are truthy. """
         project_id = config.get('PROJECT_ID')
-        project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT')
+        project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT') or config.get('GCLOUD_PROJECT')
         if project and project_id and project != project_id:
             warnings.warn("The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id))
         if not any((project, project_id)):
             warnings.warn("Unable to find the critical project id setting from config. Checking environment later. ")
-        project = project or project_id
         labels = {
             'gae_env': config.get('GAE_ENV'),
-            'project': project,
-            'project_id': project_id,
+            'project': project or project_id,
+            'project_id': project_id or project,
             'service': config.get('GAE_SERVICE'),
             'module_id': config.get('GAE_SERVICE'),
             'code_service': config.get('CODE_SERVICE'),  # Either local or GAE_SERVICE value
