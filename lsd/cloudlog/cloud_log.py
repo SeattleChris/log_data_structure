@@ -762,7 +762,9 @@ class CloudLog(logging.Logger):
                 stream = stdout
             elif stream == 'stderr':
                 stream = stderr
-        return stream
+            else:
+                raise TypeError("Expecting an IO stream, if not given string of 'stdout' or 'stderr'. ")
+        return stream  # Can be None. Otherwise assuming it is a valid IO stream.
 
     @classmethod
     def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
