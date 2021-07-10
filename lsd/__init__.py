@@ -1,5 +1,5 @@
 from flask import Flask
-from .cloud_log import CloudLog
+from .cloudlog import CloudLog
 
 
 def create_app(config, config_overrides=dict()):

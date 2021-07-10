@@ -57,6 +57,21 @@ def determine_filter_ranges(filters, name, low_level):
     return ranges
 
 
+def _clean_level(level):
+    """Used if logging._checkLevel is not available. """
+    name_to_level = logging._nameToLevel
+    if isinstance(level, str):
+        level = name_to_level.get(level.upper(), None)
+        if level is None:
+            raise ValueError("The level string was not a recognized value. ")
+    elif isinstance(level, int):
+        if level not in name_to_level.values():
+            raise ValueError("The level integer was not a recognized value. ")
+    else:
+        raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+    return level
+
+
 def move_handlers(source, target, log_level=None):
     """Move all the google.cloud.logging handlers from source to target logger, applying log_level if provided. """
     if not all(isinstance(logger, logging.getLoggerClass()) for logger in (source, target)):
@@ -89,3 +104,4 @@ def get_named_handler(name="python", logger=logging.root):
                     return handle
             logger = logger.parent
     return None
+
