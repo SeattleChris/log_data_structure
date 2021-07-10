@@ -1,6 +1,6 @@
 import logging
-from .cloud_log import NON_EXISTING_LOGGER_NAME, LowPassFilter, IgnoreFilter  # , CloudParamHandler
-from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
+from .cloud_log import LowPassFilter, IgnoreFilter  # , CloudParamHandler
+# from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 
 
 def reduce_range_overlaps(ranges):
@@ -29,6 +29,7 @@ def reduce_range_overlaps(ranges):
 
 def determine_filter_ranges(filters, name, low_level):
     """For a given filters, determine the ranges covered for LogRecord with given name. """
+    # from .cloud_log import NON_EXISTING_LOGGER_NAME
     max_level = logging.CRITICAL + 1  # Same as logging.FATAL + 1
     if not isinstance(filters, (list, tuple, set)):
         filters = [filters]
@@ -40,7 +41,7 @@ def determine_filter_ranges(filters, name, low_level):
     for _ in range(0, name.count('.')):
         temp = temp.rpartition('.')[0]
         low_name_match.append(temp)
-    low_name_match.append(NON_EXISTING_LOGGER_NAME)
+    # low_name_match.append(NON_EXISTING_LOGGER_NAME)
     ranges = []
     for filter in filters:
         if isinstance(filter, LowPassFilter) and name in filter._allowed:
@@ -55,53 +56,3 @@ def determine_filter_ranges(filters, name, low_level):
             r = (low_level, max_level)
         ranges.append(r)
     return ranges
-
-
-def _clean_level(level):
-    """Used if logging._checkLevel is not available. """
-    name_to_level = logging._nameToLevel
-    if isinstance(level, str):
-        level = name_to_level.get(level.upper(), None)
-        if level is None:
-            raise ValueError("The level string was not a recognized value. ")
-    elif isinstance(level, int):
-        if level not in name_to_level.values():
-            raise ValueError("The level integer was not a recognized value. ")
-    else:
-        raise TypeError("The level, or default level, must be an appropriate str or int value. ")
-    return level
-
-
-def move_handlers(source, target, log_level=None):
-    """Move all the google.cloud.logging handlers from source to target logger, applying log_level if provided. """
-    if not all(isinstance(logger, logging.getLoggerClass()) for logger in (source, target)):
-        raise ValueError('Both source and target must be loggers. ')
-    stay, move = [], []
-    for handler in source.handlers:
-        if isinstance(handler, CloudLoggingHandler):
-            if log_level:
-                handler.level = log_level
-            move.append(handler)
-        else:
-            stay.append(handler)
-    if move:
-        target.handlers.extend(move)
-        source.handlers = stay
-    return
-
-
-def get_named_handler(name="python", logger=logging.root):
-    """Returns the CloudLoggingHandler with the matching name attached to the provided logger. """
-    try:
-        handle = logging._handlers.get(name)
-        return handle
-    except Exception as e:
-        logging.exception(e)
-        while logger:
-            handlers = getattr(logger, 'handlers', [])
-            for handle in handlers:
-                if handle.name == name:
-                    return handle
-            logger = logger.parent
-    return None
-
