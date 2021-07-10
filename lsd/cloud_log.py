@@ -403,8 +403,25 @@ class CloudLog(logging.Logger):
         if automate:
             self.automated_structure(**kwargs)
 
-    def automated_structure(self, resource=None, client=None, replace=False, **kwargs):
-        """Typically only used for the core logers of the main code. This will add resource, labels, client, etc. """
+    def automated_structure(self, resource=None, client=None, replace=False, check_global=True, **kwargs):
+        """Typically only used for the core logers of the main code. This will add resource, labels, client, etc.
+        Input:
+            resource: can be None, a google.cloud.logging.Resource, or a dict translation of one.
+            client: can be None, a google.cloud.logging.Client, StreamClient, credential or path to credential file.
+            replace: if a Logger exists with the same name, this boolean indicates if it should be replaced.
+            check_global: Boolean indicating if missing settings may be found on attributes of logging.root.
+            ** Restrictions: If client is None, then a valid value must be found via check_global or cred_or_path kwarg.
+            List of kwarg overrides: stream, fmt, format, parent, handler_name, handler_level, cred_or_path,
+                                    res_type, labels, client_info, client_options.
+            All other kwargs will be used for labels.
+            If not set, the defaults for those in the list will be determined by:
+            stream, fmt, format, parent: from defaults in standard library logging.
+            res_type, handler_name, handler_path: from CloudLog class attributes.
+            cred_or_path: set to None. Raises ValueError if there is both a client and a cred_or_path.
+            labels, (and resource if None): from check_global and constructed (or updated) from kwarg values.
+            client_info, client_options: Not used if missing. Used for make_client if client not constructed.
+
+        """
         # After cleaning out special key-words, the remaining kwargs are used for creating Resource and labels.
         name = self.name
         stream = self.clean_stream(kwargs.pop('stream', None))
@@ -420,10 +437,10 @@ class CloudLog(logging.Logger):
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
-        resource, labels, kwargs = self.prepare_res_label(resource=resource, **kwargs)
+        resource, labels, kwargs = self.prepare_res_label(check_global=check_global, resource=resource, **kwargs)
         self.labels = labels
         self.resource = resource._to_dict()
-        if client is None:
+        if client is None and check_global:
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, **client_kwargs, **labels)
         if isinstance(client, cloud_logging.Client):  # Most likely expeected outcome - logs to external stream.
@@ -855,7 +872,7 @@ class CloudLog(logging.Logger):
             label_overrides = label_overrides or {}
         if resource and isinstance(resource, dict):
             try:
-            resource = Resource._from_dict(resource)
+                resource = Resource._from_dict(resource)
             except Exception as e:
                 print(e)
                 resource = None
@@ -1119,14 +1136,11 @@ class CloudLog(logging.Logger):
         """Triggers a first request. Returns a dictionary of key classes for shell_context_processor. """
         app.try_trigger_before_first_request_functions()
         logDict = logging.root.manager.loggerDict
-        all_loggers = [logger for name, logger in logDict.items()]
-
         return {
             'CloudLog': CloudLog,
             'LowPassFilter': LowPassFilter,
             'StreamClient': StreamClient,
             'StreamTransport': StreamTransport,
-            'all_loggers': all_loggers,
             'logDict': logDict,
             'logging': logging,
             }
