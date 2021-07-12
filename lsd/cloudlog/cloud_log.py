@@ -473,11 +473,7 @@ class CloudLog(logging.Logger):
         base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
         base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
-        root_handlers = kwargs.pop('handlers', [])
-        if base_level < high_level:
-            root_handlers = cls.high_low_split_handlers(base_level, high_level, root_handlers)
-        elif base_level > high_level:
-            raise ValueError(f"The high logging level of {high_level} should be above the base level {base_level}. ")
+        root_handlers = cls.high_low_split_handlers(level, high_level, kwargs.pop('handlers', []))
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
@@ -692,6 +688,8 @@ class CloudLog(logging.Logger):
         """
         if level == high_level:
             return handlers
+        elif level > high_level:
+            raise ValueError(f"The high logging level of {high_level} should be above the base level {level}. ")
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
         low_handler = logging.StreamHandler(stdout)
