@@ -12,7 +12,9 @@ This sets the root logger to report higher level LogRecords to stderr, and lower
 
 ## How to use
 
-In your file with create_app, import CloudLog. Before instantiating your Flask app, call CloudLog.basicConfig, passing it your config (object or dict) with additional parameters if desired.
+### Using CloudLog.basicConfig (preferred method)
+
+Must call CloudLog.basicConfig called before instantiating, or creating, the Flask app. Of course this can be within the 'create_app' function or otherwise called before `app = Flask(__name__)`.
 
 Simple Example:
 
@@ -36,9 +38,9 @@ You may want to override some default settings for basicConfig. Besides the ones
 
 Example with additional parameters:
 
-- config_overrides: if create_app can have overridden parameters, CloudLog may need to be aware of them.
+- config_overrides: if create_app can override config settings, CloudLog may need to be aware of them.
 - add_config: A list of class attributes to include if they aren't already included in config.__dict__.
-- normal app.logger plus two additional loggers - app.alert, app.c_log
+- Add two loggers (app.alert and app.x_log) in addition to the default app.logger.
 
 ```Python
 from flask import Flask
@@ -46,7 +48,7 @@ from cloudlog import CloudLog
 
 
 def create_app(config, config_overrides=dict()):
-    log_names = [__name__, 'alert', 'c_log']
+    log_names = [__name__, 'alert', 'x_log']
     add_config = ['PROJECT_ID']
     log_setup = CloudLog.basicConfig(config, config_overrides, add_config=add_config log_names=log_names)
     app = Flask(__name__)
@@ -59,6 +61,43 @@ def create_app(config, config_overrides=dict()):
 
     return app
 ```
+
+### Without CloudLog.basicConfig
+
+Attempts to do most of the work using the normal technique (calling CloudLog.basicConfig before creating the Flask app). However, CloudLog will not be set as the logging LoggerClass. This technique is experimental and may not be as reliable as the other technique.
+
+Simple Example:
+
+```Python
+from flask import Flask
+from cloudlog import CloudLog
+
+
+def create_app(config):
+    app = Flask(__name__)
+    app.config.from_object(config)
+    CloudLog.attach_loggers(app, config)
+
+    ...
+
+    return app
+```
+
+Can also pass manual values in leu of those settings setup through the CloudLog.basicConfig technique. This could be something like replacing the single `CloudLog.attach_loggers(app, config)` with the following example:
+
+```Python
+  ...
+
+  labels = {'user_setting': 'user_value'}
+  log_setup = {'level': 10, 'high_level': 30, 'labels': labels}
+  log_names = ['alert']
+  CloudLog.attach_loggers(app, config, log_setup, log_names)
+  ...
+```
+
+See CloudLog.attach_loggers docstring for more information on appropriate log_setup keys and values.
+
+### Other Setup Features
 
 If you want to include some CLI shell context your create_app could include (within the ... sections indicated above) something like the following:
 

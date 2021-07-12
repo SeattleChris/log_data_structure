@@ -506,16 +506,16 @@ class CloudLog(logging.Logger):
         Input:
             app: An instantiated and configured Flask app.
             config: Best if it is the config dict or object used to configure app. Uses app.config otherwise.
+            log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
             log_names: list of additional loggers, if any, besides the main app.logger.
             test_log_setup: For module development and possibly tests. Creates 'c_log' logger & its own StreamClient.
-            log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
             Valid log_setup keys and value description:
-                high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
-                level: The logging level for the application. Default depends on CloudLog class attributes & app.debug.
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
-            The high_low_split handlers can always be overridden by setting 'high_level' equal to 'level' in log_setup.
+                high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
+                level: The logging level for the application. Default depends on CloudLog class attributes & app.debug.
+            The high_low_split handlers can be overridden by setting 'high_level' equal to 'level' in log_setup.
         Modifies:
             If app.testing is True, only sets app.log_client, app._resource, app.log_names to given values.
             Otherwise it sets these to either the given or computed values along with the following -
