@@ -1,9 +1,10 @@
-from collections import defaultdict
+# from collections import defaultdict
 import logging
+# import google.cloud.logging as cloud_logging
 from google.cloud import logging as cloud_logging
-from .cloud_log import LowPassFilter
-from pprint import pprint
-from datetime import time, datetime as dt
+from .cloudlog import LowPassFilter
+# from pprint import pprint
+from datetime import datetime as dt
 
 LogClass = logging.getLoggerClass()
 MAX_LOG_LEVEL = logging.CRITICAL
@@ -292,18 +293,3 @@ def make_tree(loggers: list):
     #     name = name
 
     # name = handler.name if has_external_log else log_name
-
-
-# curr = self
-# while curr:
-#     for handler in curr.handlers:
-#         has_external_log = isinstance((getattr(handler, 'client', None)), cloud_logging.Client)
-#         name = handler.name if has_external_log else log_name
-#         names.add(name)
-#         grouped_high_level = {name: [] for name in names}
-#         high_level = [(f.name, f.below_level) for f in curr.filters if isinstance(f, LowPassFilter) and f.name in names]
-#         for name, lvl in high_level:
-#             grouped_high_level[name].append(lvl)
-#         high_level = max(high_level) if high_level else max_level
-#         levels.add((handler.level, high_level))
-#     curr = curr.parent if curr.propagate else None
