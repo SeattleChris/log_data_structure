@@ -507,7 +507,7 @@ class CloudLog(logging.Logger):
             app: An instantiated and configured Flask app.
             config: Best if it is the config dict or object used to configure app. Uses app.config otherwise.
             log_names: list of additional loggers, if any, besides the main app.logger.
-            test_log_setup: For module development and possibly tests.
+            test_log_setup: For module development and possibly tests. Creates 'c_log' logger & its own StreamClient.
             log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
             Valid log_setup keys and value description:
                 high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
@@ -515,6 +515,16 @@ class CloudLog(logging.Logger):
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
+        Modifies:
+            If app.testing is True, it only sets app.log_client, app._resource, app.log_names to given values.
+            Otherwise it sets these to either the given or computed values along with the following -
+            Creates and attaches appropriate handler to app.logger.
+            For each str name in log_names, creates a logger and attaches it to app as an attribute with same name.
+            If no valid log_client, creates a google.cloud.logging.Client or CloudLog.StreamClient as appropriate.
+            If creating a google.cloud.logging.Client: Ensure, if appropriate, setting high_low_split handlers.
+            If creating a CloudLog.StreamClient: app.logger gets a stdout handler with filter if needed for low levels.
+        Output:
+            None.
         """
         app_version = app.config.get('GAE_VERSION', 'UNKNOWN VERSION')
         build = ' CloudLog setup after instantiating app on build: {} '.format(app_version)
