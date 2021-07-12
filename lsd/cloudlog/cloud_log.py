@@ -570,12 +570,13 @@ class CloudLog(logging.Logger):
             report_names, app_handler_name = CloudLog.process_names([__name__, *log_names])
             app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
             if isinstance(log_client, StreamClient):
-                low_app_name = app_handler_name + '_low'
-                low_handler = CloudLog.make_handler(low_app_name, level, res, log_client, stream='stdout')
-                stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
-                low_handler.addFilter(stdout_filter)
-                app.logger.addHandler(low_handler)
                 app.logger.propagate = False
+                if high_level > level:
+                    low_app_name = app_handler_name + '_low'
+                    low_handler = cls.make_handler(low_app_name, level, res, log_client, stream='stdout')
+                    stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
+                    low_handler.addFilter(stdout_filter)
+                    app.logger.addHandler(low_handler)
             else:  # isinstance(log_client, cloud_logging.Client):
                 CloudLog.add_report_log(report_names, high_level)
                 root_handlers = logging.root.handlers
