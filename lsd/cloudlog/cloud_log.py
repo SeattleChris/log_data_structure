@@ -544,8 +544,8 @@ class CloudLog(logging.Logger):
         else:
             standard_env = getattr(config, 'standard_env', None)
             cred_path = cred_path or getattr(config, cred_var, None)
-        level = log_setup.get('level', CloudLog.DEBUG_LOG_LEVEL if debug else CloudLog.DEFAULT_LEVEL)
-        high_level = log_setup.get('high_level', CloudLog.DEFAULT_HIGH_LEVEL)
+        level = log_setup.get('level', cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL)
+        high_level = log_setup.get('high_level', cls.DEFAULT_HIGH_LEVEL)
         log_client = log_setup.get('log_client', None)
         res = log_setup.get('resource', None)
         labels = log_setup.get('labels', {})
@@ -557,18 +557,18 @@ class CloudLog(logging.Logger):
                 labels = {**res, **labels}
                 res = None
         if not res:
-            res = CloudLog.make_resource(config, **labels)
+            res = cls.make_resource(config, **labels)
             labels = {**res.labels, **labels}
-        app_handler_name = CloudLog.normalize_handler_name(__name__)
+        app_handler_name = cls.normalize_handler_name(__name__)
         extra_loggers = []
         if testing:
             pass
         elif not standard_env:
             log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
         elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
-            log_client = CloudLog.make_client(cred_path, resource=res, labels=labels, config=config)
-            report_names, app_handler_name = CloudLog.process_names([__name__, *log_names])
-            app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
+            log_client = cls.make_client(cred_path, resource=res, labels=labels, config=config)
+            report_names, app_handler_name = cls.process_names([__name__, *log_names])
+            app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
             if isinstance(log_client, StreamClient):
                 app.logger.propagate = False
                 if high_level > level:
@@ -578,22 +578,22 @@ class CloudLog(logging.Logger):
                     low_handler.addFilter(stdout_filter)
                     app.logger.addHandler(low_handler)
             else:  # isinstance(log_client, cloud_logging.Client):
-                CloudLog.add_report_log(report_names, high_level)
+                cls.add_report_log(report_names, high_level)
                 root_handlers = logging.root.handlers
                 names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
                 needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
                 if not all(ea in names_root_handlers for ea in needed_root_handler_names):
-                    root_handlers = CloudLog.high_low_split_handlers(level, high_level, root_handlers)
+                    root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
                     logging.root.handlers = root_handlers
         if not testing:
-            app_handler = CloudLog.make_handler(app_handler_name, high_level, res, log_client)
+            app_handler = cls.make_handler(app_handler_name, high_level, res, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
                 for name in log_names:
                     cur_logger = CloudLog(name, level, automate=True, resource=res, client=log_client)
                     cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
                     extra_loggers.append(cur_logger)
-            CloudLog.add_report_log(extra_loggers, high_level)
+            cls.add_report_log(extra_loggers, high_level)
             if test_log_setup:
                 name = 'c_log'
                 c_client = StreamClient(name, res, labels)
@@ -1009,7 +1009,7 @@ class CloudLog(logging.Logger):
         if logger_names is None:
             logger_names = []
         elif not logger_names:
-            logger_names = getattr(app, 'log_list', [])
+            logger_names = getattr(app, 'log_names', [])
         app_loggers = [(name, getattr(app, name)) for name in logger_names if hasattr(app, name)]
         print(f"Found {len(app_loggers)} named attachments. ")
         app_loggers = [ea for ea in app_loggers if ea[1] is not None]
@@ -1087,8 +1087,8 @@ class CloudLog(logging.Logger):
                     creds_list.append(temp_creds)
             resources.append(getattr(handle, 'resource', None))
         print("\n=================== Resources found attached to the Handlers ===================")
-        if hasattr(app, '_resource_test'):
-            resources.append(app._resource_test)
+        if hasattr(app, '_resource'):
+            resources.append(app._resource)
         for res in resources:
             if hasattr(res, '_to_dict'):
                 pprint(res._to_dict())
