@@ -8,6 +8,8 @@
 This package adds a number of logging features for Python Flask applications on the Google Cloud
 Platform (GCP), most notably on Google App Engine (GAE) - standard environment. It exposes and expands on some GCP logging features that are not readily available for some deployment contexts.
 
+This sets the root logger to report higher level LogRecords to stderr, and lower level LogRecords to stdout. This can be overridden by setting the 'high_level' to equal 'level' in passed parameters, or the class attributes of 'DEFAULT_LEVEL' and 'DEFAULT_HIGH_LEVEL'. If a logger sends to an external stream, then by default all of it's LogRecords will also be sent to stdout and not to stderr. The intent is to allow watching the stdout and stderr streams and not miss anything, but reviewing log reports can be simplified by filtering to stderr and individual external logs as desired.
+
 ## How to use
 
 In your file with create_app, import CloudLog. Before instantiating your Flask app, call CloudLog.basicConfig, passing it your config (object or dict) with additional parameters if desired.
