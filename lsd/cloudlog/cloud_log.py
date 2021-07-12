@@ -441,11 +441,11 @@ class CloudLog(logging.Logger):
         self.add_loggerDict(replace)
 
     @classmethod
-    def basicConfig(cls, config=None, config_overrides={}, add_config_dict=None, **kwargs):
+    def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
             config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
-            add_config_dict is a list of attributes on the config object, or a dict, to update config_as_dict response.
+            add_config is a list of attributes on the config object, or a dict, to update config_as_dict response.
             config_overrides is a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
@@ -456,13 +456,14 @@ class CloudLog(logging.Logger):
             resource, labels: constructed from config/environ and kwarg values (along with res_type).
         Modifies:
             CloudLog is set as the LoggerClass for logging.
-            logging.root initialized with level and high/low handlers that are set with log_names overrides.
+            logging.root initialized with level.
+            If level < high_level (default): logging.root has high & low handlers that are set with log_names overrides.
             logging.root is given some attributes with a structure of _config_*. These are also included in the return.
         Returns:
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = config_dict(config, add_config_dict)
+        config = config_dict(config, add_config)
         config.update(config_overrides)
         cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
