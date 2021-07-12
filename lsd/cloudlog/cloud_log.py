@@ -666,14 +666,25 @@ class CloudLog(logging.Logger):
         return report_names, app_handler_name
 
     @classmethod
-    def high_low_split_handlers(cls, base_level, high_level, handlers=[], low_name=None, high_name=None):
-        """Creates a split of high logs sent to stderr, low logs to stdout. Can choose some logs for always stdout. """
+    def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None):
+        """If unequal level & high_level, creates a split of high logs sent to stderr, low (or assigned) logs to stdout.
+        Input:
+            handlers: Optional additional handlers that will be added (usually to root) after the low & high handlers.
+            low_name & high_name: Uses defaults if None, otherwise str for handler names. The handlers must be named.
+            level & high_level: Required int valid for log level. If equal, the split loggers are not created.
+        Output of list of handlers, if unequal level & high level (typical use):
+            First is a stdout handler with stdout_filter. Second is a stderr handler with empty IgnoreFilter.
+        Output if level is equal to high_level:
+            Returns the original handler(s), or an empty list if none given.
+        """
+        if level == high_level:
+            return handlers
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
         low_handler = logging.StreamHandler(stdout)
         stdout_filter = cls.make_stdout_filter(high_level)
         low_handler.addFilter(stdout_filter)
-        low_handler.setLevel(base_level)
+        low_handler.setLevel(level)
         low_handler.set_name(low_name)
         high_handler = logging.StreamHandler(stderr)
         high_handler.addFilter(IgnoreFilter())
