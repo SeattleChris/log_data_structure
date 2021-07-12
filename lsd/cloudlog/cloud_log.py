@@ -515,8 +515,9 @@ class CloudLog(logging.Logger):
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
+            The high_low_split handlers can always be overridden by setting 'high_level' equal to 'level' in log_setup.
         Modifies:
-            If app.testing is True, it only sets app.log_client, app._resource, app.log_names to given values.
+            If app.testing is True, only sets app.log_client, app._resource, app.log_names to given values.
             Otherwise it sets these to either the given or computed values along with the following -
             Creates and attaches appropriate handler to app.logger.
             For each str name in log_names, creates a logger and attaches it to app as an attribute with same name.
