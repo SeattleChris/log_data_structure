@@ -506,7 +506,20 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
-        """Called after Flask app is initiated. Expected 'log_setup' from cls.basicConfig, or does similar work. """
+        """Called after Flask app is initiated. Ideally 'log_setup' from cls.basicConfig, but can work otherwise.
+        Input:
+            app: An instantiated and configured Flask app.
+            config: Best if it is the config dict or object used to configure app. Uses app.config otherwise.
+            log_names: list of additional loggers, if any, besides the main app.logger.
+            test_log_setup: For module development and possibly tests.
+            log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
+            Valid log_setup keys and value description:
+                high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
+                base_level: The logging level for the application. Default depends on class attributes and app.debug.
+                log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
+                resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
+                labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
+        """
         app_version = app.config.get('GAE_VERSION', 'UNKNOWN VERSION')
         build = ' CloudLog setup after instantiating app on build: {} '.format(app_version)
         logging.info('{:*^74}'.format(build))
