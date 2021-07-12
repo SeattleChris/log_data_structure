@@ -45,7 +45,7 @@ def test_route():
     print(app.config.get('GAE_VERSION', 'UNKNOWN VERSION'))
     print("************************************************************************************")
     # pprint(app.config)
-    CloudLog.test_loggers(app, app.log_list, context='package')
+    CloudLog.test_loggers(app, app.log_names, context='package')
     print("--------------------------------------------------")
     return redirect(url_for('view', **info))
 

@@ -592,10 +592,10 @@ class CloudLog(logging.Logger):
                 extra_loggers.append(c_log)  # app.c_log = c_log
                 log_names.append(name)
         app.log_client = log_client
-        app._resource_test = res
+        app._resource = res
         for logger in extra_loggers:
             setattr(app, logger.name, logger)
-        app.log_list = log_names  # assumes to also check for app.logger.
+        app.log_names = log_names  # assumes to also check for app.logger.
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
