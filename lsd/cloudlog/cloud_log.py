@@ -534,58 +534,56 @@ class CloudLog(logging.Logger):
         test_log_setup = debug  # TODO: Update after creating and testing module.
         if isinstance(log_names, str):
             log_names = [log_names]
-        cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
-        cred_path = app.config.get(cred_var, None)
-        if not config:
-            config = app.config
-        if isinstance(config, dict):
-            standard_env = config.get('standard_env', None)
-            cred_path = cred_path or config.get(cred_var, None)
-        else:
-            standard_env = getattr(config, 'standard_env', None)
-            cred_path = cred_path or getattr(config, cred_var, None)
-        level = log_setup.get('level', cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL)
-        high_level = log_setup.get('high_level', cls.DEFAULT_HIGH_LEVEL)
         log_client = log_setup.get('log_client', None)
         res = log_setup.get('resource', None)
-        labels = log_setup.get('labels', {})
-        if isinstance(res, dict):
-            try:
-                res = cloud_logging.Resource._from_dict(res)
-            except Exception as e:
-                logging.exception(e)
-                labels = {**res, **labels}
-                res = None
-        if not res:
-            res = cls.make_resource(config, **labels)
-            labels = {**res.labels, **labels}
-        app_handler_name = cls.normalize_handler_name(__name__)
         extra_loggers = []
-        if testing:
-            pass
-        elif not standard_env:
-            log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
-        elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
-            log_client = cls.make_client(cred_path, resource=res, labels=labels, config=config)
-            report_names, app_handler_name = cls.process_names([__name__, *log_names])
-            app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
-            if isinstance(log_client, StreamClient):
-                app.logger.propagate = False
-                if high_level > level:
-                    low_app_name = app_handler_name + '_low'
-                    low_handler = cls.make_handler(low_app_name, level, res, log_client, stream='stdout')
-                    stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
-                    low_handler.addFilter(stdout_filter)
-                    app.logger.addHandler(low_handler)
-            else:  # isinstance(log_client, cloud_logging.Client):
-                cls.add_report_log(report_names, high_level)
-                root_handlers = logging.root.handlers
-                names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
-                needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
-                if not all(ea in names_root_handlers for ea in needed_root_handler_names):
-                    root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
-                    logging.root.handlers = root_handlers
         if not testing:
+            cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
+            cred_path = app.config.get(cred_var, None)
+            if not config:
+                config = app.config
+            if isinstance(config, dict):
+                standard_env = config.get('standard_env', None)
+                cred_path = cred_path or config.get(cred_var, None)
+            else:
+                standard_env = getattr(config, 'standard_env', None)
+                cred_path = cred_path or getattr(config, cred_var, None)
+            level = log_setup.get('level', cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL)
+            high_level = log_setup.get('high_level', cls.DEFAULT_HIGH_LEVEL)
+            labels = log_setup.get('labels', {})
+            if isinstance(res, dict):
+                try:
+                    res = cloud_logging.Resource._from_dict(res)
+                except Exception as e:
+                    logging.exception(e)
+                    labels = {**res, **labels}
+                    res = None
+            if not res:
+                res = cls.make_resource(config, **labels)
+                labels = {**res.labels, **labels}
+            app_handler_name = cls.normalize_handler_name(__name__)
+            if not standard_env:
+                log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
+            elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
+                log_client = cls.make_client(cred_path, resource=res, labels=labels, config=config)
+                report_names, app_handler_name = cls.process_names([__name__, *log_names])
+                app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
+                if isinstance(log_client, StreamClient):
+                    app.logger.propagate = False
+                    if high_level > level:
+                        low_app_name = app_handler_name + '_low'
+                        low_handler = cls.make_handler(low_app_name, level, res, log_client, stream='stdout')
+                        stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
+                        low_handler.addFilter(stdout_filter)
+                        app.logger.addHandler(low_handler)
+                else:  # isinstance(log_client, cloud_logging.Client):
+                    cls.add_report_log(report_names, high_level)
+                    root_handlers = logging.root.handlers
+                    names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
+                    needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
+                    if not all(ea in names_root_handlers for ea in needed_root_handler_names):
+                        root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
+                        logging.root.handlers = root_handlers
             app_handler = cls.make_handler(app_handler_name, high_level, res, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
@@ -594,14 +592,14 @@ class CloudLog(logging.Logger):
                     cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
                     extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
-            if test_log_setup:
-                name = 'c_log'
-                c_client = StreamClient(name, res, labels)
-                c_log = CloudLog(name, level, automate=True, resource=res, client=c_client)
-                # c_log is now set for: stderr out, propagate=False
-                c_log.propagate = True
-                extra_loggers.append(c_log)  # app.c_log = c_log
-                log_names.append(name)
+        if test_log_setup:
+            name = 'c_log'
+            c_client = StreamClient(name, res, labels)
+            c_log = CloudLog(name, level, automate=True, resource=res, client=c_client)
+            # c_log is now set for: stderr out, propagate=False
+            c_log.propagate = True
+            extra_loggers.append(c_log)  # app.c_log = c_log
+            log_names.append(name)
         app.log_client = log_client
         app._resource = res
         for logger in extra_loggers:
