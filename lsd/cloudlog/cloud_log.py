@@ -470,22 +470,22 @@ class CloudLog(logging.Logger):
         testing = kwargs.pop('testing', config.get('TESTING', None))
         if testing:
             return False
-        base_level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
-        base_level = cls.normalize_level(kwargs.pop('level', None), base_level)
+        level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
+        level = cls.normalize_level(kwargs.pop('level', None), level)
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
         root_handlers = cls.high_low_split_handlers(level, high_level, kwargs.pop('handlers', []))
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
-        kwargs['level'] = base_level
+        kwargs['level'] = level
         try:
             logging.basicConfig(**kwargs)  # logging.root, or any loggers should not have been accessed yet.
             root = logging.root
             root._config_resource = resource._to_dict()
             root._config_lables = labels
             root._config_log_client = client
-            root._config_base_level = base_level
+            root._config_level = level
             root._config_high_level = high_level
         except Exception as e:
             print("********************** Unable to do basicConfig **********************")
@@ -496,7 +496,7 @@ class CloudLog(logging.Logger):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             client.update_attachments(resource, labels, app_handler_name)
-        cloud_config = {'log_client': client, 'base_level': base_level, 'high_level': high_level}
+        cloud_config = {'log_client': client, 'level': level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
@@ -511,7 +511,7 @@ class CloudLog(logging.Logger):
             log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
             Valid log_setup keys and value description:
                 high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
-                base_level: The logging level for the application. Default depends on class attributes and app.debug.
+                level: The logging level for the application. Default depends on CloudLog class attributes & app.debug.
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
@@ -534,7 +534,7 @@ class CloudLog(logging.Logger):
         else:
             standard_env = getattr(config, 'standard_env', None)
             cred_path = cred_path or getattr(config, cred_var, None)
-        base_level = log_setup.get('base_level', CloudLog.DEBUG_LOG_LEVEL if debug else CloudLog.DEFAULT_LEVEL)
+        level = log_setup.get('level', CloudLog.DEBUG_LOG_LEVEL if debug else CloudLog.DEFAULT_LEVEL)
         high_level = log_setup.get('high_level', CloudLog.DEFAULT_HIGH_LEVEL)
         log_client = log_setup.get('log_client', None)
         res = log_setup.get('resource', None)
@@ -554,14 +554,14 @@ class CloudLog(logging.Logger):
         if testing:
             pass
         elif not standard_env:
-            log_client, *extra_loggers = setup_cloud_logging(cred_path, base_level, high_level, config, log_names)
+            log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
         elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
             log_client = CloudLog.make_client(cred_path, resource=res, labels=labels, config=config)
             report_names, app_handler_name = CloudLog.process_names([__name__, *log_names])
             app_handler_name = app_handler_name or CloudLog.APP_HANDLER_NAME
             if isinstance(log_client, StreamClient):
                 low_app_name = app_handler_name + '_low'
-                low_handler = CloudLog.make_handler(low_app_name, base_level, res, log_client, stream='stdout')
+                low_handler = CloudLog.make_handler(low_app_name, level, res, log_client, stream='stdout')
                 stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
                 low_handler.addFilter(stdout_filter)
                 app.logger.addHandler(low_handler)
@@ -572,21 +572,21 @@ class CloudLog(logging.Logger):
                 names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
                 needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
                 if not all(ea in names_root_handlers for ea in needed_root_handler_names):
-                    root_handlers = CloudLog.high_low_split_handlers(base_level, high_level, root_handlers)
+                    root_handlers = CloudLog.high_low_split_handlers(level, high_level, root_handlers)
                     logging.root.handlers = root_handlers
         if not testing:
             app_handler = CloudLog.make_handler(app_handler_name, high_level, res, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
                 for name in log_names:
-                    cur_logger = CloudLog(name, base_level, automate=True, resource=res, client=log_client)
+                    cur_logger = CloudLog(name, level, automate=True, resource=res, client=log_client)
                     cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
                     extra_loggers.append(cur_logger)
             CloudLog.add_report_log(extra_loggers, high_level)
             if test_log_setup:
                 name = 'c_log'
                 c_client = StreamClient(name, res, labels)
-                c_log = CloudLog(name, base_level, automate=True, resource=res, client=c_client)
+                c_log = CloudLog(name, level, automate=True, resource=res, client=c_client)
                 # c_log is now set for: stderr out, propagate=False
                 c_log.propagate = True
                 extra_loggers.append(c_log)  # app.c_log = c_log
