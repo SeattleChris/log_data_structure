@@ -543,18 +543,14 @@ class CloudLog(logging.Logger):
             cred_path = app.config.get(cred_var, None)
             if not config:
                 config = app.config
-            if isinstance(config, dict):
-                standard_env = config.get('standard_env', None)
-                cred_path = cred_path or config.get(cred_var, None)
-            else:
-                standard_env = getattr(config, 'standard_env', None)
-                cred_path = cred_path or getattr(config, cred_var, None)
+            elif not cred_path:
+                cred_path = config.get(cred_var) if isinstance(config, dict) else getattr(config, cred_var, None)
             level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
             level = cls.normalize_level(log_setup.pop('level', None), level)
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             app_handler_name = cls.normalize_handler_name(__name__)
-            if not standard_env:
+            if not cls.standard_env(config):
                 log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, config, log_names)
             elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
@@ -1021,6 +1017,29 @@ class CloudLog(logging.Logger):
         if reduced and not ranges:
             return result[1]
         return result
+
+    @staticmethod
+    def standard_env(config):
+        """Determine code environnement, assuming environment variables 'GAE_INSTANCE' & 'GAE_ENV' are only set by GCP.
+        Input:
+            config: either a dict, a Config object, or (less ideally) None.
+        Output:
+            Boolean indicating the app is either running in 'GAE Standard' or locally.
+        """
+        expected = ('local', 'standard')
+        config = config or environ
+        if isinstance(config, dict) or config is environ:
+            gae_env = config.get('GAE_ENV', None)
+            gae_instance = config.get('GAE_INSTANCE', None)
+        else:
+            gae_env = getattr(config, 'GAE_ENV', None)
+            gae_instance = getattr(config, 'GAE_INSTANCE', None)
+        gae_env = gae_env or environ.get('GAE_ENV', None)
+        gae_instance = gae_instance or environ.get('GAE_INSTANCE', None)
+        code_environment = 'local' if not gae_instance else gae_env
+        if code_environment in expected:
+            return True
+        return False
 
     @staticmethod
     def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):
