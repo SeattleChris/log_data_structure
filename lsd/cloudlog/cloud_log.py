@@ -555,7 +555,7 @@ class CloudLog(logging.Logger):
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             app_handler_name = cls.normalize_handler_name(__name__)
             if not standard_env:
-                log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
+                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, config, log_names)
             elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
                 report_names, app_handler_name = cls.process_names([__name__, *log_names])
@@ -923,6 +923,42 @@ class CloudLog(logging.Logger):
         handler.setFormatter(fmt)
         return handler
 
+    @classmethod
+    def non_standard_logging(cls, cred_path, low_level, high_level, config=None, extra_log_names=None):
+        """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
+        log_client = cls.make_client(cred_path)
+        log_client.get_default_handler()
+        log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
+        resource = cls.make_resource(config, cls.DEFAULT_RESOURCE_TYPE)
+        # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
+        handlers = logging.root.handlers.copy()
+        fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
+        low_handler, high_handler, *handlers = cls.high_low_split_handlers(low_level, high_level, handlers)
+        low_handler.setFormatter(fmt)
+        low_filter = low_handler.filters[0]
+        low_filter.allow(cls.APP_LOGGER_NAME)
+        ignore_filter = high_handler.filters[0]
+        ignore_filter.add(cls.APP_LOGGER_NAME)
+        logging.root.handlers.clear()
+        logging.root.addHandler(low_handler)
+        if len(handlers):
+            for handler in handlers:
+                handler.addFilter(ignore_filter)
+                if handler.level < high_level:
+                    handler.setLevel(high_level)
+                logging.root.addHandler(handler)
+        else:
+            high_handler.setFormatter(fmt)
+            logging.root.addHandler(high_handler)
+        handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client, fmt=fmt)
+        logging.root.addHandler(handler)
+        if extra_log_names is None:
+            extra_log_names = []
+        elif isinstance(extra_log_names, str):
+            extra_log_names = [extra_log_names]
+        cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in extra_log_names]
+        return (log_client, *cloud_logs)
+
     @property
     def project(self):
         """If unknown, computes & sets from labels, resource, client, environ, or created client. May set client. """
@@ -1143,42 +1179,6 @@ class CloudLog(logging.Logger):
             'logDict': logDict,
             'logging': logging,
             }
-
-
-def setup_cloud_logging(service_account_path, low_level, high_level, config=None, extra_log_names=None):
-    """Function to setup logging with google.cloud.logging when not on Google Cloud App Standard. """
-    log_client = CloudLog.make_client(service_account_path)
-    log_client.get_default_handler()
-    log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
-    resource = CloudLog.make_resource(config, CloudLog.DEFAULT_RESOURCE_TYPE)
-    # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
-    handlers = logging.root.handlers.copy()
-    fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
-    low_handler, high_handler, *handlers = CloudLog.high_low_split_handlers(low_level, high_level, handlers)
-    low_handler.setFormatter(fmt)
-    low_filter = low_handler.filters[0]
-    low_filter.allow(CloudLog.APP_LOGGER_NAME)
-    ignore_filter = high_handler.filters[0]
-    ignore_filter.add(CloudLog.APP_LOGGER_NAME)
-    logging.root.handlers.clear()
-    logging.root.addHandler(low_handler)
-    if len(handlers):
-        for handler in handlers:
-            handler.addFilter(ignore_filter)
-            if handler.level < high_level:
-                handler.setLevel(high_level)
-            logging.root.addHandler(handler)
-    else:
-        high_handler.setFormatter(fmt)
-        logging.root.addHandler(high_handler)
-    handler = CloudLog.make_handler(CloudLog.APP_HANDLER_NAME, high_level, resource, log_client, fmt=fmt)
-    logging.root.addHandler(handler)
-    if extra_log_names is None:
-        extra_log_names = []
-    elif isinstance(extra_log_names, str):
-        extra_log_names = [extra_log_names]
-    cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in extra_log_names]
-    return (log_client, *cloud_logs)
 
 
 def make_base_logger(name=None, level=None, res=None, client=None, **kwargs):
