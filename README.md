@@ -62,9 +62,11 @@ def create_app(config, config_overrides=dict()):
     return app
 ```
 
+More details on additional parameters explained in the docstring of CloudLog.basicConfig.
+
 ### Without CloudLog.basicConfig
 
-Attempts to do most of the work using the normal technique (calling CloudLog.basicConfig before creating the Flask app). However, CloudLog will not be set as the logging LoggerClass. This technique is experimental and may not be as reliable as the other technique.
+Attempts to do most of the work of using the normal technique (calling CloudLog.basicConfig before creating the Flask app). However, CloudLog will not be set as the logging LoggerClass. This technique is experimental and may not be as reliable as the other technique.
 
 Simple Example:
 
@@ -87,7 +89,6 @@ Can also pass manual values in leu of those settings setup through the CloudLog.
 
 ```Python
   ...
-
   labels = {'user_setting': 'user_value'}
   log_setup = {'level': 10, 'high_level': 30, 'labels': labels}
   log_names = ['alert']
