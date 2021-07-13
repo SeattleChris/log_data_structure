@@ -536,7 +536,7 @@ class CloudLog(logging.Logger):
         if isinstance(log_names, str):
             log_names = [log_names]
         log_client = log_setup.pop('log_client', None)
-        res = log_setup.get('resource', None)
+        resource = log_setup.get('resource', None)
         extra_loggers = []
         if not testing:
             cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -552,19 +552,19 @@ class CloudLog(logging.Logger):
             level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
             level = cls.normalize_level(log_setup.pop('level', None), level)
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
-            res, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
+            resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             app_handler_name = cls.normalize_handler_name(__name__)
             if not standard_env:
                 log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
             elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
-                log_client = cls.make_client(cred_path, resource=res, labels=labels, config=config)
+                log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
                 report_names, app_handler_name = cls.process_names([__name__, *log_names])
                 app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
                 if isinstance(log_client, StreamClient):
                     app.logger.propagate = False
                     if high_level > level:
                         low_app_name = app_handler_name + '_low'
-                        low_handler = cls.make_handler(low_app_name, level, res, log_client, stream='stdout')
+                        low_handler = cls.make_handler(low_app_name, level, resource, log_client, stream='stdout')
                         stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
                         low_handler.addFilter(stdout_filter)
                         app.logger.addHandler(low_handler)
@@ -576,24 +576,24 @@ class CloudLog(logging.Logger):
                     if not all(ea in names_root_handlers for ea in needed_root_handler_names):
                         root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
                         logging.root.handlers = root_handlers
-            app_handler = cls.make_handler(app_handler_name, high_level, res, log_client)
+            app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
                 for name in log_names:
-                    cur_logger = CloudLog(name, level, automate=True, resource=res, client=log_client)
+                    cur_logger = CloudLog(name, level, automate=True, resource=resource, client=log_client)
                     cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
                     extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
         if test_log_setup:
             name = 'c_log'
-            c_client = StreamClient(name, res, labels)
-            c_log = CloudLog(name, level, automate=True, resource=res, client=c_client)
+            c_client = StreamClient(name, resource, labels)
+            c_log = CloudLog(name, level, automate=True, resource=resource, client=c_client)
             # c_log is now set for: stderr out, propagate=False
             c_log.propagate = True
             extra_loggers.append(c_log)  # app.c_log = c_log
             log_names.append(name)
         app.log_client = log_client
-        app._resource = res
+        app._resource = resource
         for logger in extra_loggers:
             setattr(app, logger.name, logger)
         app.log_names = log_names  # assumes to also check for app.logger.
