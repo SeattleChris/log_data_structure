@@ -535,7 +535,7 @@ class CloudLog(logging.Logger):
         test_log_setup = debug  # TODO: Update after creating and testing module.
         if isinstance(log_names, str):
             log_names = [log_names]
-        log_client = log_setup.get('log_client', None)
+        log_client = log_setup.pop('log_client', None)
         res = log_setup.get('resource', None)
         extra_loggers = []
         if not testing:
@@ -550,19 +550,9 @@ class CloudLog(logging.Logger):
                 standard_env = getattr(config, 'standard_env', None)
                 cred_path = cred_path or getattr(config, cred_var, None)
             level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
-            level = cls.normalize_level(log_setup.get('level'), level)
-            high_level = cls.normalize_level(log_setup.get('high_level'), cls.DEFAULT_HIGH_LEVEL)
-            labels = log_setup.get('labels', {})
-            if isinstance(res, dict):
-                try:
-                    res = cloud_logging.Resource._from_dict(res)
-                except Exception as e:
-                    logging.exception(e)
-                    labels = {**res, **labels}
-                    res = None
-            if not res:
-                res = cls.make_resource(config, **labels)
-                labels = {**res.labels, **labels}
+            level = cls.normalize_level(log_setup.pop('level', None), level)
+            high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
+            res, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             app_handler_name = cls.normalize_handler_name(__name__)
             if not standard_env:
                 log_client, *extra_loggers = setup_cloud_logging(cred_path, level, high_level, config, log_names)
@@ -871,7 +861,7 @@ class CloudLog(logging.Logger):
 
     @classmethod
     def prepare_res_label(cls, check_global=True, **kwargs):
-        """Will start with resource & labels in kwargs or found globally. Returns Resource, Labels, kwargs. """
+        """Returns Resource, Labels, kwargs. Starts with resource & labels in kwargs (or global), creates as needed. """
         config = kwargs.pop('config', environ)
         res_type = kwargs.pop('res_type', cls.DEFAULT_RESOURCE_TYPE)
         resource = kwargs.pop('resource', None)
