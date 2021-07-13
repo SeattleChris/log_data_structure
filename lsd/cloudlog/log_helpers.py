@@ -27,13 +27,21 @@ def config_dict(config, add_to_dict=None):
 def _clean_level(level):
     """Used if logging._checkLevel is not available. """
     name_to_level = logging._nameToLevel
+    level = _level_to_allowed_num(level, name_to_level)
+    if level not in name_to_level.values():
+        raise ValueError("The level integer was not a recognized value. ")
+    return level
+
+
+def _level_to_allowed_num(level, name_to_level={}):
+    """Returns int. Raises ValueError for invalid str (not in name_to_level) or invalid int, or TypeError if needed. """
+    max_level = max(name_to_level.values())
     if isinstance(level, str):
         level = name_to_level.get(level.upper(), None)
         if level is None:
             raise ValueError("The level string was not a recognized value. ")
-    elif isinstance(level, int):
-        if level not in name_to_level.values():
-            raise ValueError("The level integer was not a recognized value. ")
+    elif isinstance(level, int) and 0 <= level <= max_level:
+        raise ValueError("The level integer was not a recognized value. ")
     else:
         raise TypeError("The level, or default level, must be an appropriate str or int value. ")
     return level

@@ -9,7 +9,7 @@ from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 from google.cloud.logging_v2.handlers.transports import BackgroundThreadTransport
 from google.oauth2 import service_account
 from google.cloud.logging import Resource
-from .log_helpers import config_dict, _clean_level
+from .log_helpers import config_dict, _clean_level, _level_to_allowed_num
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
@@ -549,8 +549,9 @@ class CloudLog(logging.Logger):
             else:
                 standard_env = getattr(config, 'standard_env', None)
                 cred_path = cred_path or getattr(config, cred_var, None)
-            level = log_setup.get('level', cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL)
-            high_level = log_setup.get('high_level', cls.DEFAULT_HIGH_LEVEL)
+            level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
+            level = cls.normalize_level(log_setup.get('level'), level)
+            high_level = cls.normalize_level(log_setup.get('high_level'), cls.DEFAULT_HIGH_LEVEL)
             labels = log_setup.get('labels', {})
             if isinstance(res, dict):
                 try:
@@ -718,14 +719,12 @@ class CloudLog(logging.Logger):
         return logging.getLogger(name)
 
     @classmethod
-    def normalize_level(cls, level=None, default=None):
+    def normalize_level(cls, level=None, default=None, named=True):
         """Returns the level value, based on the input string or integer if provided, or by using the default value. """
         if level is None and default is None:
-            default = cls.DEFAULT_LEVEL
-            default = default if default is not None else logging.WARNING
+            default = cls.DEFAULT_LEVEL if cls.DEFAULT_LEVEL is not None else logging.WARNING
         level = level if level is not None else default
-        clean_level = getattr(logging, '_checkLevel', _clean_level)
-        level = clean_level(level)
+        level = _clean_level(level) if named else _level_to_allowed_num(level, logging._nameToLevel)
         return level
 
     @classmethod
