@@ -765,8 +765,8 @@ class CloudLog(logging.Logger):
     @classmethod
     def normalize_level(cls, level=None, default=None, named=True):
         """Returns the level value, based on the input string or integer if provided, or by using the default value. """
-        if level is None and default is None:
-            default = cls.DEFAULT_LEVEL if cls.DEFAULT_LEVEL is not None else logging.WARNING
+        if not any(isinstance(ea, (str, int)) for ea in (level, default)):
+            raise TypeError(f"Must pass a str or int for level ({level}) or default ({default}). ")
         level = level if level is not None else default
         level = _clean_level(level) if named else _level_to_allowed_num(level, logging._nameToLevel)
         return level
