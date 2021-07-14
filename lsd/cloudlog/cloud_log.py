@@ -613,9 +613,10 @@ class CloudLog(logging.Logger):
         return ignore_filter
 
     @classmethod
-    def make_stdout_filter(cls, level=None):
+    def make_stdout_filter(cls, level=None, _title='stdout'):
         """Allows named logs and logs below level. Applied to a handler with stdout, typically on root logger. """
-        return LowPassFilter(name='', level=level, title='stdout')  # '' name means it applies to all considered logs.
+        level = level or cls.DEFAULT_HIGH_LEVEL  # Cannot be zero.
+        return LowPassFilter(name='', level=level, title=_title)  # '' name means it applies to all considered logs.
 
     @classmethod
     def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=False):
