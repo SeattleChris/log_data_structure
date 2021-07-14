@@ -625,9 +625,10 @@ class CloudLog(logging.Logger):
         low_handler = logging._handlers.get(handler_name, None)
         if not low_handler:
             raise LookupError(f"Could not find expected {handler_name} handler. ")
-        targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title == 'stdout']
+        targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title.startswith('stdout')]
         if len(targets) > 1:
-            warnings.warn(f"More than one LowPassFilter attached to {handler_name} handler. Using the first one. ")
+            names = ', '.join(' - '.join((ea.name or '_', ea.title)) for ea in targets)
+            warnings.warn(f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. ")
         try:
             stdout_filter = targets[0]
         except IndexError:
