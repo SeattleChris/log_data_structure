@@ -673,6 +673,44 @@ class CloudLog(logging.Logger):
         return report_names, app_handler_name
 
     @classmethod
+    def setup_low_handler(cls, low_name, level, high_level):
+        """Returns new or existing handler (if valid configuration, overwrites level & stream, and may add filter). """
+        title, filter = None, None
+        try:
+            filter = cls.get_stdout_filter(high_level, low_name, check_global=False)
+            handler = logging._handlers[low_name]
+            assert filter.level == high_level
+            assert not filter.name
+        except (LookupError, ReferenceError):  # create from scratch.
+            title = 'stdout'
+            handler, filter = None, None
+        except AssertionError:  # add new extra filter to existing handler.
+            title = 'stdout' if filter.name else 'stdout_' + low_name
+            filter = None
+        if handler:  # Checking existing handler configuration.
+            try:
+                transport = getattr(handler, 'transport', None)
+                has_stream_transport = isinstance(transport, StreamTransport)
+                only_streamhandler = issubclass(logging.StreamHandler, handler.__class__)
+                assert has_stream_transport or only_streamhandler
+            except AssertionError:
+                handler = None
+                raise KeyError(f"The {low_name} handler exists but is the wrong class or has the wrong transport. ")
+        else:  # No existing handler, create one.
+            handler = logging.StreamHandler(stdout)
+            handler.set_name(low_name)
+        if handler.stream != stdout:
+            handler.setStream(stdout)
+            raise UserWarning(f"The {low_name} handler stream had to be updated to stdout. ")
+        if not filter:  # Either normal setup on new handler, or adding new filter to existing handler
+            filter = cls.make_stdout_filter(high_level, _title=title)
+            if len(title) > 6:
+                filter.name = low_name
+            handler.addFilter(filter)
+        handler.setLevel(level)
+        return handler
+
+    @classmethod
     def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None):
         """If unequal level & high_level, creates a split of high logs sent to stderr, low (or assigned) logs to stdout.
         Input:
@@ -690,11 +728,8 @@ class CloudLog(logging.Logger):
             raise ValueError(f"The high logging level of {high_level} should be above the base level {level}. ")
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
-        low_handler = logging.StreamHandler(stdout)
-        stdout_filter = cls.make_stdout_filter(high_level)
-        low_handler.addFilter(stdout_filter)
-        low_handler.setLevel(level)
-        low_handler.set_name(low_name)
+        low_handler = cls.setup_low_handler(low_name, level, high_level)
+
         high_handler = logging.StreamHandler(stderr)
         high_handler.addFilter(IgnoreFilter())
         high_handler.setLevel(high_level)
