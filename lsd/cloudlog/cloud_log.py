@@ -713,6 +713,8 @@ class CloudLog(logging.Logger):
     @classmethod
     def setup_high_handler(cls, high_name, level, high_level):
         """Returns new or existing handler (if valid configuration, overwrites level & stream, and may add filter). """
+        if not isinstance(high_level, int) or not isinstance(high_name, str) or high_name == '':
+            raise TypeError("Invalid parameters for setup_high_handler method. ")
         high_name = high_name or cls.SPLIT_HIGH_NAME
         try:
             handler = logging._handlers[high_name]
