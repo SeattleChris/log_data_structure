@@ -711,6 +711,28 @@ class CloudLog(logging.Logger):
         return handler
 
     @classmethod
+    def setup_high_handler(cls, high_name, level, high_level):
+        """Returns new or existing handler (if valid configuration, overwrites level & stream, and may add filter). """
+        high_name = high_name or cls.SPLIT_HIGH_NAME
+        try:
+            handler = logging._handlers[high_name]
+            transport = getattr(handler, 'transport', None)
+            has_stream_transport = isinstance(transport, StreamTransport)
+            only_streamhandler = issubclass(logging.StreamHandler, handler.__class__)
+            assert has_stream_transport or only_streamhandler
+        except (LookupError, ReferenceError):  # create one
+            handler = logging.StreamHandler(stderr)
+            handler.set_name(high_name)
+        except AssertionError:  # Not valid configuration.
+            handler = None
+            raise KeyError(f"The {high_name} handler exists but is the wrong class or has the wrong transport. ")
+        handler.setLevel(high_level)
+        if handler.stream != stderr:
+            handler.setStream(stderr)
+        cls.get_apply_ignore_filter(high_name)
+        return handler
+
+    @classmethod
     def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None):
         """If unequal level & high_level, creates a split of high logs sent to stderr, low (or assigned) logs to stdout.
         Input:
