@@ -634,7 +634,6 @@ class CloudLog(logging.Logger):
         except IndexError:
             if high_level is None and check_global:
                 high_level = getattr(logging.root, '_config_high_level', None)
-            high_level = high_level or cls.DEFAULT_HIGH_LEVEL
             stdout_filter = cls.make_stdout_filter(high_level)
             low_handler.addFilter(stdout_filter)
         return stdout_filter
