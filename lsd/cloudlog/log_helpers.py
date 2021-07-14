@@ -33,17 +33,17 @@ def _clean_level(level):
     return level
 
 
-def _level_to_allowed_num(level, name_to_level={}):
+def _level_to_allowed_num(level, name_to_level=logging._nameToLevel):
     """Returns int. Raises ValueError for invalid str (not in name_to_level) or invalid int, or TypeError if needed. """
     max_level = max(name_to_level.values())
     if isinstance(level, str):
         level = name_to_level.get(level.upper(), None)
         if level is None:
             raise ValueError("The level string was not a recognized value. ")
-    elif isinstance(level, int) and 0 <= level <= max_level:
-        raise ValueError("The level integer was not a recognized value. ")
-    else:
+    elif not isinstance(level, int):
         raise TypeError("The level, or default level, must be an appropriate str or int value. ")
+    if not 0 <= level <= max_level:
+        raise ValueError(f"The level integer ( {level} ) was not a recognized value. Max: {max_level} ")
     return level
 
 
