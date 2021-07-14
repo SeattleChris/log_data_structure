@@ -711,7 +711,7 @@ class CloudLog(logging.Logger):
         return handler
 
     @classmethod
-    def setup_high_handler(cls, high_name, level, high_level):
+    def setup_high_handler(cls, high_name, high_level):
         """Returns new or existing handler (if valid configuration, overwrites level & stream, and may add filter). """
         if not isinstance(high_level, int) or not isinstance(high_name, str) or high_name == '':
             raise TypeError("Invalid parameters for setup_high_handler method. ")
@@ -735,7 +735,7 @@ class CloudLog(logging.Logger):
         return handler
 
     @classmethod
-    def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None):
+    def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None, named_levels=True):
         """If unequal level & high_level, creates a split of high logs sent to stderr, low (or assigned) logs to stdout.
         Input:
             handlers: Optional additional handlers that will be added (usually to root) after the low & high handlers.
