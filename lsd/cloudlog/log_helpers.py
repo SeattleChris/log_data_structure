@@ -24,12 +24,12 @@ def config_dict(config, add_to_dict=None):
     return config
 
 
-def _clean_level(level):
+def _clean_level(level, named=True):
     """Used if logging._checkLevel is not available. """
     name_to_level = logging._nameToLevel
     level = _level_to_allowed_num(level, name_to_level)
-    if level not in name_to_level.values():
-        raise ValueError("The level integer was not a recognized value. ")
+    if named and level not in name_to_level.values():
+        raise ValueError("The level integer does not match a named level. ")
     return level
 
 

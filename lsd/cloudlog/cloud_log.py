@@ -770,7 +770,7 @@ class CloudLog(logging.Logger):
         if not any(isinstance(ea, (str, int)) for ea in (level, default)):
             raise TypeError(f"Must pass a str or int for level ({level}) or default ({default}). ")
         level = level if level is not None else default
-        level = _clean_level(level) if named else _level_to_allowed_num(level, logging._nameToLevel)
+        level = _clean_level(level, named)
         return level
 
     @classmethod
