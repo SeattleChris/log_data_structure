@@ -562,8 +562,8 @@ class CloudLog(logging.Logger):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             client.update_attachments(resource, labels, app_handler_name)
-        cloud_config = {'log_client': client, 'level': level, 'high_level': high_level}
-        cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
+        cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_pairs}
+        cloud_config.update({'log_client': client, 'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
     @classmethod
