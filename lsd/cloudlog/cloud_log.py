@@ -973,12 +973,16 @@ class CloudLog(logging.Logger):
             cred_or_path = getattr(logging.root, '._config_log_client', None)
         if isinstance(cred_or_path, (GoogleClient, StreamClient)):
             return cred_or_path
-        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
-        if 'project' in kwargs:
-            client_kwargs['project'] = kwargs['project']
-        resource, labels = None, None
+
         if res_label:
             resource, labels, kwargs = cls.prepare_res_label(check_global, **kwargs)
+            add_client_kwargs = dict(resource=resource, labels=labels)
+        else:
+            add_client_kwargs = {ea: kwargs.pop(ea) for ea in ('resource', 'labels') if ea in kwargs}
+        if 'project' in kwargs:
+            add_client_kwargs['project'] = kwargs['project']
+        client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
+        client_kwargs.update(add_client_kwargs)
         if isinstance(cred_or_path, service_account.Credentials):
             credentials = cred_or_path
         elif cred_or_path:
@@ -987,17 +991,12 @@ class CloudLog(logging.Logger):
         else:
             credentials = None
         client_kwargs.setdefault('credentials', credentials)
-        log_client = None
-        if cred_or_path != logging:
-            try:
-                log_client = GoogleClient(**client_kwargs)
-            except Exception as e:
-                logging.exception(e)
-                log_client = None
-        if not log_client:
+        try:
+            log_client = GoogleClient(**client_kwargs)
+            assert isinstance(log_client, BaseClientGoogle)
+        except Exception as e:
+            logging.exception(e)
             log_client = StreamClient(**kwargs, **client_kwargs)
-        if isinstance(log_client, StreamClient) and any(resource, labels):
-            log_client.update_attachments(resource, labels)
         return log_client
 
     @staticmethod
