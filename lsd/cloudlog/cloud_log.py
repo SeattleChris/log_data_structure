@@ -549,29 +549,13 @@ class CloudLog(logging.Logger):
             level = cls.normalize_level(log_setup.pop('level', None), level)
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
-            app_handler_name = cls.normalize_handler_name(__name__)
+            app_handler_name = cls.normalize_handler_name(__name__)  # cls.APP_HANDLER_NAME
             if not standard_env(config):
-                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, config, log_names)
+                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, log_names)
             elif not isinstance(log_client, (GoogleClient, StreamClient)):
-                log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
                 report_names, app_handler_name = cls.process_names([__name__, *log_names])
-                app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
-                if isinstance(log_client, StreamClient):
-                    app.logger.propagate = False
-                    if high_level > level:
-                        low_app_name = app_handler_name + '_low'
-                        low_handler = cls.make_handler(low_app_name, level, resource, log_client, stream='stdout')
-                        stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
-                        low_handler.addFilter(stdout_filter)
-                        app.logger.addHandler(low_handler)
-                else:  # isinstance(log_client, GoogleClient):
-                    cls.add_report_log(report_names, high_level)
-                    root_handlers = logging.root.handlers
-                    names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
-                    needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
-                    if not all(ea in names_root_handlers for ea in needed_root_handler_names):
-                        root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
-                        logging.root.handlers = root_handlers
+                log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
+                cls.alt_setup_logging(app, log_client, resource, report_names, app_handler_name, level, high_level)
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
@@ -594,6 +578,26 @@ class CloudLog(logging.Logger):
             setattr(app, logger.name, logger)
         app.log_names = log_names  # assumes to also check for app.logger.
         logging.debug("***************************** END post app instantiating setup *****************************")
+
+    @classmethod
+    def alt_setup_logging(cls, app, log_client, resource, report_names, app_handler_name, level, high_level):
+        """Used for standard environment, but not using .basicConfig for pre-setup. """
+        if isinstance(log_client, StreamClient):
+            app.logger.propagate = False
+            if high_level > level:
+                low_app_name = app_handler_name + '_low'
+                low_handler = cls.make_handler(low_app_name, level, resource, log_client, stream='stdout')
+                stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
+                low_handler.addFilter(stdout_filter)
+                app.logger.addHandler(low_handler)
+        else:  # isinstance(log_client, GoogleClient):
+            cls.add_report_log(report_names, high_level)
+            root_handlers = logging.root.handlers
+            names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
+            needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
+            if not all(ea in names_root_handlers for ea in needed_root_handler_names):
+                root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
+                logging.root.handlers = root_handlers
 
     @classmethod
     def get_apply_ignore_filter(cls, handler_name=None):
@@ -981,12 +985,11 @@ class CloudLog(logging.Logger):
         return handler
 
     @classmethod
-    def non_standard_logging(cls, cred_path, low_level, high_level, config=None, extra_log_names=None):
+    def non_standard_logging(cls, cred_path, low_level, high_level, resource, extra_log_names=None):
         """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
         log_client = cls.make_client(cred_path)
         log_client.get_default_handler()
         log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
-        resource = cls.make_resource(config, cls.DEFAULT_RESOURCE_TYPE)
         # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
         handlers = logging.root.handlers.copy()
         fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
