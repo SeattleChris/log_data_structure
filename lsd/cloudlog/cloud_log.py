@@ -98,11 +98,11 @@ class GoogleClient(BaseClientGoogle):
     """Extends google.cloud.logging.Client with StreamClient signature & attr: resource, labels, handler_name. """
     BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
 
-    def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
+    def __init__(self, handler_name='', resource=None, labels=None, handler=None, **kwargs):
         base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
         # assert kwargs == {}
         super().__init__(**base_kwargs)
-        self.handler_name = name.lower()
+        self.handler_name = handler_name.lower()
         self.resource = resource or {}
         self.labels = labels or {}
         self._handler = None
@@ -164,14 +164,14 @@ class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
     BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
 
-    def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
+    def __init__(self, handler_name='', resource=None, labels=None, handler=None, **kwargs):
         base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
         for key in ('project', 'client_info', 'client_options'):
             base_kwargs['_' + key] = base_kwargs.pop(key)
         for key, val in base_kwargs.items():
             setattr(self, key, val)
         # assert kwargs == {}
-        self.handler_name = name.lower()
+        self.handler_name = handler_name.lower()
         self.resource = resource or {}
         self.labels = labels or {}
         self._handler = None
@@ -441,7 +441,8 @@ class CloudLog(logging.Logger):
         'reported_errors': ['project_id'],
         }
     RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
-    CLIENT_KW = ('project', 'credentials', 'client_info', 'client_options')  # also: '_http', '_use_grpc'
+    CLIENT_KW = ('project', 'handler_name', 'handler', 'credentials', 'client_info', 'client_options')
+    # also: '_http', '_use_grpc'
 
     def __init__(self, name=None, level=logging.NOTSET, automate=False, **kwargs):
         name = self.normalize_logger_name(name)
@@ -496,11 +497,11 @@ class CloudLog(logging.Logger):
         self.resource = resource._to_dict()
         if client is None and check_global:
             client = getattr(logging.root, '_config_log_client', None)
-        client = self.make_client(client, **client_kwargs, **labels)
+        client = self.make_client(client, handler_name=handler_name, resource=resource, **client_kwargs, **labels)
         if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
             self.add_report_log(name, high_level, check_global=True)
         elif isinstance(client, StreamClient):
-            client.update_attachments(resource, labels, handler_name)
+            # client.update_attachments(resource, labels, handler_name)
             self.propagate = False
         self.client = client  # accessing self.project may, on edge cases, set self.client
         handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
