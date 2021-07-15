@@ -675,6 +675,8 @@ class CloudLog(logging.Logger):
     @classmethod
     def setup_low_handler(cls, low_name, level, high_level):
         """Returns new or existing handler (if valid configuration, overwrites level & stream, and may add filter). """
+        if not all([isinstance(level, int), isinstance(high_level, int), isinstance(low_name, str), low_name != '']):
+            raise TypeError("Invalid parameters for setup_low_handler method. ")
         title, filter = None, None
         try:
             filter = cls.get_stdout_filter(high_level, low_name, check_global=False)
