@@ -1,6 +1,6 @@
 import logging
 from os import environ
-from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
+from google.cloud.logging import handlers, Client as GoogleClient
 
 
 def config_dict(config, add_to_dict=None):
@@ -237,7 +237,7 @@ def move_handlers(source, target, log_level=None):
         raise ValueError('Both source and target must be loggers. ')
     stay, move = [], []
     for handler in source.handlers:
-        if isinstance(handler, CloudLoggingHandler):
+        if isinstance(handler, handlers.CloudLoggingHandler):
             if log_level:
                 handler.level = log_level
             move.append(handler)

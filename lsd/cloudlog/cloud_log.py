@@ -4,12 +4,12 @@ from sys import stderr, stdout
 from os import environ
 from datetime import datetime as dt
 from flask import json
-from google.cloud import logging as cloud_logging
+from google.cloud.logging import Client as GoogleClient
 from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 from google.cloud.logging_v2.handlers.transports import BackgroundThreadTransport
 from google.oauth2 import service_account
 from google.cloud.logging import Resource
-from .log_helpers import config_dict, _clean_level, _level_to_allowed_num
+from .log_helpers import config_dict, _clean_level, standard_env
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 MAX_LOG_LEVEL = logging.CRITICAL
@@ -287,7 +287,7 @@ class CloudParamHandler(CloudLoggingHandler):
                    '_span_id_str', '_http_request_str', '_source_location_str', '_labels_str', '_msg_str')
 
     def __init__(self, client, name='param_handler', resource=None, labels=None, stream=None, ignore=None):
-        if not isinstance(client, (StreamClient, cloud_logging.Client)):
+        if not isinstance(client, (StreamClient, GoogleClient)):
             raise ValueError("Expected a StreamClient or cloud logging Client. ")
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
@@ -430,7 +430,7 @@ class CloudLog(logging.Logger):
         if client is None and check_global:
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, **client_kwargs, **labels)
-        if isinstance(client, cloud_logging.Client):  # Most likely expeected outcome - logs to external stream.
+        if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
             self.add_report_log(name, check_global=True)
         elif isinstance(client, StreamClient):
             client.update_attachments(resource, labels, handler_name)
@@ -492,7 +492,7 @@ class CloudLog(logging.Logger):
             logging.exception(e)
             return False
         report_names, app_handler_name = cls.process_names(log_names)
-        if isinstance(client, cloud_logging.Client):
+        if isinstance(client, GoogleClient):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             client.update_attachments(resource, labels, app_handler_name)
@@ -550,9 +550,9 @@ class CloudLog(logging.Logger):
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             app_handler_name = cls.normalize_handler_name(__name__)
-            if not cls.standard_env(config):
+            if not standard_env(config):
                 log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, config, log_names)
-            elif not isinstance(log_client, (cloud_logging.Client, StreamClient)):
+            elif not isinstance(log_client, (GoogleClient, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
                 report_names, app_handler_name = cls.process_names([__name__, *log_names])
                 app_handler_name = app_handler_name or cls.APP_HANDLER_NAME
@@ -564,7 +564,7 @@ class CloudLog(logging.Logger):
                         stdout_filter = cls.make_stdout_filter(high_level)  # Do not log at this level or higher.
                         low_handler.addFilter(stdout_filter)
                         app.logger.addHandler(low_handler)
-                else:  # isinstance(log_client, cloud_logging.Client):
+                else:  # isinstance(log_client, GoogleClient):
                     cls.add_report_log(report_names, high_level)
                     root_handlers = logging.root.handlers
                     names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
@@ -577,7 +577,7 @@ class CloudLog(logging.Logger):
             if not extra_loggers and log_names:
                 for name in log_names:
                     cur_logger = CloudLog(name, level, automate=True, resource=resource, client=log_client)
-                    cur_logger.propagate = isinstance(log_client, cloud_logging.Client)
+                    cur_logger.propagate = isinstance(log_client, GoogleClient)
                     extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
         if test_log_setup:
@@ -834,7 +834,7 @@ class CloudLog(logging.Logger):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
         if cred_or_path is None and check_global:
             cred_or_path = getattr(logging.root, '._config_log_client', None)
-        if isinstance(cred_or_path, (cloud_logging.Client, StreamClient)):
+        if isinstance(cred_or_path, (GoogleClient, StreamClient)):
             return cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         if 'project' in kwargs:
@@ -853,7 +853,7 @@ class CloudLog(logging.Logger):
         log_client = None
         if cred_or_path != logging:
             try:
-                log_client = cloud_logging.Client(**client_kwargs)
+                log_client = GoogleClient(**client_kwargs)
             except Exception as e:
                 logging.exception(e)
                 log_client = None
@@ -1024,7 +1024,7 @@ class CloudLog(logging.Logger):
             if not project and self.resource:
                 project = getattr(self.resource, 'labels', {})
                 project = project.get('project_id') or project.get('project')
-            if not project and isinstance(self.client, cloud_logging.Client):
+            if not project and isinstance(self.client, GoogleClient):
                 project = self.client.project
             if not project:
                 project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
