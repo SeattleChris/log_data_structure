@@ -460,17 +460,18 @@ class CloudLog(logging.Logger):
             replace: if a Logger exists with the same name, this boolean indicates if it should be replaced.
             check_global: Boolean indicating if missing settings may be found on attributes of logging.root.
             ** Restrictions: If client is None, then a valid value must be found via check_global or cred_or_path kwarg.
-            List of kwarg overrides: stream, fmt, format, parent, handler_name, handler_level, cred_or_path,
-                                    res_type, labels, client_info, client_options.
+            List of kwarg overrides: stream, fmt, format, parent, handler_name, handler_level, high_level,
+                                    cred_or_path, res_type, labels, client_info, client_options.
             All other kwargs will be used for labels.
             If not set, the defaults for those in the list will be determined by:
             stream, fmt, format, parent: from defaults in standard library logging.
-            res_type, handler_name, handler_path: from CloudLog class attributes.
+            res_type, handler_name, high_level: from CloudLog class attributes.
+            handler_level: Not set (logging depends logger's level, or trickle up handlers.)
             cred_or_path: set to None. Raises ValueError if there is both a client and a cred_or_path.
             labels, (and resource if None): from check_global and constructed (or updated) from kwarg values.
-            client_info, client_options: Not used if missing. Used for make_client if client not constructed.
+            client_info, client_options: Not used if missing. Used for make_client if client not already constructed.
         Modifies current instance:
-            self.client: A google.cloud.logging.Client or StreamClient.
+            self.client: A GoogleClient or StreamClient.
             self.resource: A dict of a google.cloud.logging.Resource.
             self.lables: A dict of key-value pairs generally used for resource, but may have additional values.
             Adds a CloudParamHandler with settings - format, stream (or external log), resource, labels, level, name.
