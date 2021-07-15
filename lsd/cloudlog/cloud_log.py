@@ -95,6 +95,72 @@ class LowPassFilter(logging.Filter):
         return '<{} only {} under {}{}>'.format(self.__class__.__name__, name, self.below_level, allowed)
 
 
+class GoogleClient(BaseClientGoogle):
+    """Extends google.cloud.logging.Client with StreamClient signature & attr: resource, labels, handler_name. """
+    BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
+
+    def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
+        base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
+        # assert kwargs == {}
+        super().__init__(**base_kwargs)
+        self.handler_name = name.lower()
+        self.resource = resource or {}
+        self.labels = labels or {}
+        self._handler = None
+        if handler:
+            self.handler = handler
+
+    def update_attachments(self, resource=None, labels=None, handler=None):
+        """Helpful since the order matters. These may be added to the Client later to assist in management. """
+        name = None
+        if isinstance(resource, Resource):
+            self.resource = resource
+        if isinstance(labels, dict):
+            self.labels = labels
+        if isinstance(handler, str):
+            name = handler.lower()
+        elif isinstance(handler, logging.Handler):
+            name = getattr(handler, 'name', None)
+            if not name:
+                self.handler = handler
+        if name:
+            self.handler_name = name
+
+    @property
+    def handler(self):
+        """If possible get from weakref created in logging. Otherwise maintain a strong referenced object. """
+        rv = self._handler or logging._handlers.get(self.handler_name, None)
+        return rv
+
+    @handler.setter
+    def handler(self, handler_param):
+        handler = handler_param if isinstance(handler_param, logging.Handler) else None
+        if handler and getattr(handler, 'name', None):
+            handler = None
+        self._handler = handler  # If None, forces a lookup on logging._handlers.
+
+    @property
+    def labels(self):
+        """If the expected 'project_id' is not in labels, will attempt to get labels from resource or _project. """
+        labels_have_valid_data = bool(self._labels.get('project_id', None))
+        if not labels_have_valid_data:
+            try:
+                labels = getattr(self.resource, 'labels', {}).copy()
+            except Exception:
+                labels = {}
+            project = labels.get('project_id') or labels.get('project')
+            labels['project_id'] = project or self._project
+            self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
+        return self._labels
+
+    @labels.setter
+    def labels(self, labels):
+        if not isinstance(labels, dict):
+            raise TypeError("Expected a dict input for labels. ")
+        res_labels = getattr(self.resource, 'labels', {})
+        self._labels = labels = {**res_labels, **labels}
+
+
 class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
     BASE_CLIENT_PARAMETERS = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
