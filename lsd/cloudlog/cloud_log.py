@@ -557,7 +557,7 @@ class CloudLog(logging.Logger):
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
             return False
-        report_names, app_handler_name = cls.process_names(log_names)
+        report_names, name_pairs, app_handler_name = cls.process_names(log_names)
         if isinstance(client, GoogleClient):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
@@ -565,6 +565,48 @@ class CloudLog(logging.Logger):
         cloud_config = {'log_client': client, 'level': level, 'high_level': high_level}
         cloud_config.update({'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
+
+    @classmethod
+    def process_names(cls, log_names, _name_pairs=[]):
+        """Returns name reports, pairs, and app_handler_name from a list of str name or tuple (name, handler_name). """
+        if isinstance(log_names, str):
+            log_names = [log_names] if log_names not in (__name__, '') else []
+        if not log_names:
+            log_names = []
+        elif not isinstance(log_names, list):
+            raise TypeError(f"Expected a list (or str or None). Bad input: {log_names} ")
+        app_handler_name, app_names = None, None
+        name_pairs, report_names = [], set()
+        for name in log_names:
+            handler_name = None
+            if isinstance(name, tuple):
+                name, handler_name = name
+            name = cls.normalize_logger_name(name)
+            handler_name = cls.normalize_handler_name(handler_name or name)
+            if name == cls.APP_LOGGER_NAME:
+                app_handler_name = handler_name
+                app_names = (name, handler_name)
+                continue
+            names = (name, handler_name)
+            name_pairs.append(names)
+            report_names.update(names)
+        if not app_names:
+            name = cls.normalize_logger_name(__name__)
+            app_handler_name = cls.normalize_handler_name(name)
+            app_names = (name, app_handler_name)
+        report_names.update(app_names)
+        name_pairs = [app_names, *name_pairs]
+
+        names_dict = dict(_name_pairs)
+        if names_dict:
+            if log_names and log_names != _name_pairs and log_names != list(names_dict.keys()):
+                names_dict.update(dict(name_pairs))
+                report_names, name_pairs, app_handler_name = None, None, None
+            report_names = report_names or set(names_dict.keys()).union(names_dict.values())
+            name_pairs = name_pairs or [(key, val) for key, val in names_dict.items()]
+            app_handler_name = app_handler_name or names_dict.get(__name__)
+
+        return report_names, name_pairs, app_handler_name
 
     @classmethod
     def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
@@ -579,6 +621,7 @@ class CloudLog(logging.Logger):
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
+                name_pairs: The logger-handler name pairs returned from cls.process_names durning basicConfig.
                 high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
                 level: The logging level for the application. Default depends on CloudLog class attributes & app.debug.
             The high_low_split handlers can be overridden by setting 'high_level' equal to 'level' in log_setup.
@@ -599,10 +642,11 @@ class CloudLog(logging.Logger):
         testing = app.testing
         debug = app.debug
         test_log_setup = debug  # TODO: Update after creating and testing module.
-        if isinstance(log_names, str):
-            log_names = [log_names]
         log_client = log_setup.pop('log_client', None)
         resource = log_setup.get('resource', None)
+        name_pairs = log_setup.get('name_pairs', [])
+        report_names, name_pairs, app_handler_name = cls.process_names(log_names, _name_pairs=name_pairs)
+        log_names = [ea[0] for ea in name_pairs[1:]]
         extra_loggers = []
         if not testing:
             cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -615,11 +659,9 @@ class CloudLog(logging.Logger):
             level = cls.normalize_level(log_setup.pop('level', None), level)
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
-            app_handler_name = cls.normalize_handler_name(__name__)  # cls.APP_HANDLER_NAME
             if not standard_env(config):
-                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, log_names)
+                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, name_pairs)
             elif not isinstance(log_client, (GoogleClient, StreamClient)):
-                report_names, app_handler_name = cls.process_names([__name__, *log_names])
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
                 cls.alt_setup_logging(app, log_client, resource, report_names, app_handler_name, level, high_level)
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
