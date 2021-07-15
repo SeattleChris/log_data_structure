@@ -167,6 +167,7 @@ class LogNode:
 
     def add_child(self, node):
         if isinstance(node, LogClass):
+            print(f"***** MAKE CHILD: {node.name} ! *****")
             node = LogNode(node)
         if not isinstance(node, LogNode):
             raise ValueError(f"Excpected a LogNode or logger instance for add_child method: {node} ")
@@ -259,8 +260,12 @@ def get_tree(node: LogClass or LogNode, tree: dict = {}, name: str = '', name_lo
             node = LogNode(node)
         tree[node.name] = node
     else:
+        print(f"----------- revisit {node.name} as {node.__class__.__name__} -----------")
+        print(f"Handlers: {node.handlers} ")
+        print(f"Names: {[h.name for h in node.handlers]} ")
         logger, node = node, tree.get(node.name)
         if node._logger is None and isinstance(logger, LogClass):
+            print("********* UPDATING NODE **********")
             node._logger = logger
             node.compute_handlers = 'clear'
     if not name:  # node can still be a LogClass or LogNode

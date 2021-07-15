@@ -9,14 +9,15 @@ class Config:
     GAE_INSTANCE = environ.get('GAE_INSTANCE')
     GAE_VERSION = environ.get('GAE_VERSION')  # source code version on GCloud.
     GAE_FLEX_PROJECT = environ.get("GCLOUD_PROJECT")   # GAE - flex environment.
-    GAE_STANDARD_PROJECT = environ.get("GOOGLE_CLOUD_PROJECT")  # GAE - stanard (v2) environment.
+    GOOGLE_CLOUD_PROJECT = environ.get("GOOGLE_CLOUD_PROJECT")  # GAE - stanard (v2) environment.
     URL_SETTING = environ.get('URL')
     # General Flask Settings
     SECRET_KEY = environ.get('SECRET_KEY')  # for session cookies & flash messages
     FLASK_APP = environ.get('FLASK_APP')
     FLASK_ENV = environ.get('FLASK_ENV', 'production')
-    DEV_RUN = True if environ.get('DEV_RUN') == 'True' else False
-    DEBUG = any([DEV_RUN, environ.get('DEBUG') == 'True', GAE_SERVICE == 'dev'])
+    # DEV_RUN = True if environ.get('DEV_RUN') == 'True' else False
+    # DEBUG = any([DEV_RUN, environ.get('DEBUG') == 'True', GAE_SERVICE == 'dev'])
+    DEBUG = any([environ.get('DEBUG') == 'True', GAE_SERVICE == 'dev'])
     EXPLAIN_TEMPLATE_LOADING = False  # Creates info log with verbose template loading process. default is False.
     # SESSION_COOKIE_NAME = 'bacchus-session'
     # PREFERRED_URL_SCHEME = 'https' or 'http'
@@ -27,7 +28,7 @@ class Config:
     FB_HOOK_SECRET = environ.get('FB_HOOK_SECRET')
     # Settings for Deployment on Google Cloud, and local/deployed connection to deployed Database.
     PROJECT_NAME = environ.get('PROJECT_NAME')
-    PROJECT = GAE_STANDARD_PROJECT or GAE_FLEX_PROJECT
+    PROJECT = GOOGLE_CLOUD_PROJECT or GAE_FLEX_PROJECT  # GAE Standard Project or GAE Flex Project.
     PROJECT_ID = environ.get('PROJECT_ID')  # As set by developer in environment variables.
     PROJECT_NUMBER = environ.get('PROJECT_NUMBER')
     PROJECT_REGION = environ.get('PROJECT_REGION')
@@ -39,19 +40,27 @@ class Config:
     DB_CONNECTION_NAME = environ.get('DB_CONNECTION_NAME')
     # Parameters for Application Features
     CAPTURE_BASE_URL = environ.get('CAPTURE_BASE_URL')
-    CURRENT_SERVICE = environ.get('GAE_SERVICE', 'dev')
+    CURRENT_SERVICE = GAE_SERVICE or 'dev'
     CAPTURE_SERVICE = environ.get('CAPTURE_SERVICE')
-    COLLECT_SERVICE = environ.get('COLLECT_SERVICE', environ.get('GAE_SERVICE', 'dev'))
+    COLLECT_SERVICE = environ.get('COLLECT_SERVICE', CURRENT_SERVICE)
     CAPTURE_QUEUE = environ.get('CAPTURE_QUEUE')
     COLLECT_QUEUE = environ.get('COLLECT_QUEUE')
-    add_to_dict = ('PROJECT_ID', 'PROJECT_ZONE', 'GAE_SERVICE', 'GAE_ENV')
+    _add_to_dict = ('DEBUG', 'GAE_ENV', 'GAE_SERVICE', 'GAE_VERSION', 'PROJECT_ZONE',
+                    'GAE_FLEX_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'PROJECT', 'PROJECT_ID',
+                    )
+    _not_in_dict = ('SECRET_KEY', 'FLASK_APP', 'FLASK_ENV', 'GAE_INSTANCE', 'PROJECT_REGION',
+                    'EXPLAIN_TEMPLATE_LOADING', 'REMEMBER_COOKIE_REFRESH_EACH_REQUEST',
+                    'FB_CLIENT_ID', 'FB_CLIENT_SECRET', 'FB_HOOK_SECRET',
+                    'CAPTURE_BASE_URL', 'CURRENT_SERVICE', 'CAPTURE_SERVICE', 'COLLECT_SERVICE',
+                    'CAPTURE_QUEUE', 'COLLECT_QUEUE',  # 'DEV_RUN', 'SESSION_COOKIE_NAME', 'PREFERRED_URL_SCHEME'
+                    )
 
     def __init__(self) -> None:
         self.LOCAL_ENV = self.get_LOCAL_ENV()
         self.CODE_SERVICE = self.get_CODE_SERVICE()
         self.URL = self.get_URL()
         self.SQLALCHEMY_DATABASE_URI = self.get_SQLALCHEMY_DATABASE_URI()
-        for key in self.add_to_dict:
+        for key in self._add_to_dict:
             setattr(self, key, getattr(self, key, None))
         if self.LOCAL_ENV:
             self.SERVER_NAME = self.URL.split('//', 1).pop()

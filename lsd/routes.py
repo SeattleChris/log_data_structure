@@ -1,6 +1,6 @@
 from flask import json, redirect, url_for, render_template, request, flash, session, current_app as app  # abort
 from pprint import pprint
-from .cloud_log import CloudLog
+from .cloudlog import CloudLog
 
 
 def test_local(*args, **kwargs):
