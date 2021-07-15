@@ -740,12 +740,15 @@ class CloudLog(logging.Logger):
         Input:
             handlers: Optional additional handlers that will be added (usually to root) after the low & high handlers.
             low_name & high_name: Uses defaults if None, otherwise str for handler names. The handlers must be named.
-            level & high_level: Required int valid for log level. If equal, the split loggers are not created.
+            level & high_level: Required int or str valid for log level. If equal, the split loggers are not created.
+            named_levels: Boolean. If True, requires the level values to be integers that have an associated level name.
         Output of list of handlers, if unequal level & high level (typical use):
             First is a stdout handler with stdout_filter. Second is a stderr handler with empty IgnoreFilter.
         Output if level is equal to high_level:
             Returns the original handler(s), or an empty list if none given.
         """
+        level = cls.normalize_level(level, named=named_levels)
+        high_level = cls.normalize_level(high_level, cls.DEFAULT_HIGH_LEVEL, named=named_levels)
         if level == high_level:
             return handlers
         elif level > high_level:
