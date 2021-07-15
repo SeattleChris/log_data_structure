@@ -547,7 +547,7 @@ class CloudLog(logging.Logger):
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
         kwargs['level'] = level
-        report_names, name_pairs, app_handler_name = cls.process_names(log_names)
+        name_dict = cls.process_names(log_names)
         try:
             logging.basicConfig(**kwargs)  # logging.root, or any loggers should not have been accessed yet.
             root = logging.root
@@ -561,10 +561,11 @@ class CloudLog(logging.Logger):
             logging.exception(e)
             return False
         if isinstance(client, GoogleClient):
+            report_names = set(name_dict.keys()).union(name_dict.values())
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             pass
-        cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_pairs}
+        cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_dict}
         cloud_config.update({'log_client': client, 'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
@@ -605,8 +606,8 @@ class CloudLog(logging.Logger):
         log_client = log_setup.pop('log_client', None)
         resource = log_setup.get('resource', None)
         name_pairs = log_setup.get('name_pairs', [])
-        report_names, name_pairs, app_handler_name = cls.process_names(log_names, _name_pairs=name_pairs)
-        log_names = [ea[0] for ea in name_pairs[1:]]
+        name_dict = cls.process_names(log_names, _name_pairs=name_pairs)
+        log_names = [key for key in name_dict if key != __name__]
         extra_loggers = []
         if not testing:
             cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -620,15 +621,16 @@ class CloudLog(logging.Logger):
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             if not standard_env(config):
-                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, name_pairs)
+                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, name_dict)
             elif not isinstance(log_client, (GoogleClient, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
-                cls.alt_setup_logging(app, log_client, resource, report_names, app_handler_name, level, high_level)
+                cls.alt_setup_logging(app, log_client, level, high_level, resource, name_dict)
+            app_handler_name = name_dict(__name__)
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
                 cl_kwargs = {'level': level, 'automate': True, 'resource': resource, 'client': log_client}
-                for (name, handler_name) in name_pairs:
+                for (name, handler_name) in name_dict.items():
                     if name == __name__:
                         continue
                     cur_logger = CloudLog(name, handler_name=handler_name, **cl_kwargs)
@@ -651,8 +653,10 @@ class CloudLog(logging.Logger):
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
-    def alt_setup_logging(cls, app, log_client, resource, report_names, app_handler_name, level, high_level):
+    def alt_setup_logging(cls, app, log_client, level, high_level, resource, name_dict):
         """Used for standard environment, but not using .basicConfig for pre-setup. """
+        app_handler_name = name_dict[__name__]
+        report_names = set(name_dict.keys()).union(name_dict.values())
         if isinstance(log_client, StreamClient):
             app.logger.propagate = False
             if high_level > level:
@@ -671,7 +675,7 @@ class CloudLog(logging.Logger):
                 logging.root.handlers = root_handlers
 
     @classmethod
-    def non_standard_logging(cls, cred_path, low_level, high_level, resource, name_pairs=None):
+    def non_standard_logging(cls, cred_path, low_level, high_level, resource, names={}):
         """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
         log_client = cls.make_client(cred_path)
         log_client.get_default_handler()
@@ -696,15 +700,12 @@ class CloudLog(logging.Logger):
         else:
             high_handler.setFormatter(fmt)
             logging.root.addHandler(high_handler)
-        app_handler_name = name_pairs[0][1] if name_pairs else cls.APP_HANDLER_NAME
+        app_handler_name = names.get(__name__, cls.APP_HANDLER_NAME)
         handler = cls.make_handler(app_handler_name, high_level, resource, log_client, fmt=fmt)
         logging.root.addHandler(handler)
-        if name_pairs is None:
-            name_pairs = []
-        elif isinstance(name_pairs, str):
-            name_pairs = [name_pairs]
-        cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in name_pairs]
-        return (log_client, *cloud_logs)
+        kwargs = dict(level=low_level, automate=True, log_client=log_client, resource=resource, fmt=fmt)
+        loggers = [CloudLog(name, handler_name=names[name], **kwargs) for name in names if name != __name__]
+        return (log_client, *loggers)
 
     @classmethod
     def process_names(cls, log_names, _name_pairs=[]):
@@ -713,40 +714,29 @@ class CloudLog(logging.Logger):
             log_names = [log_names] if log_names not in (__name__, '') else []
         if not log_names:
             log_names = []
+        elif isinstance(log_names, dict):
+            log_names = [(key, val) for key, val in log_names.items()]
         elif not isinstance(log_names, list):
-            raise TypeError(f"Expected a list (or str or None). Bad input: {log_names} ")
-        app_handler_name, app_names = None, None
-        name_pairs, report_names = [], set()
+            raise TypeError(f"Expected a list (or dict or str or None). Bad input: {log_names} ")
+        rv = {__name__: cls.normalize_handler_name(__name__)}
         for name in log_names:
             handler_name = None
             if isinstance(name, tuple):
+                if len(name) != 2:
+                    raise ValueError(f"Expect either single or paired names for process_names. Invalid: {name} ")
                 name, handler_name = name
             name = cls.normalize_logger_name(name)
             handler_name = cls.normalize_handler_name(handler_name or name)
-            if name == cls.APP_LOGGER_NAME:
-                app_handler_name = handler_name
-                app_names = (name, handler_name)
-                continue
-            names = (name, handler_name)
-            name_pairs.append(names)
-            report_names.update(names)
-        if not app_names:
-            name = cls.normalize_logger_name(__name__)
-            app_handler_name = cls.normalize_handler_name(name)
-            app_names = (name, app_handler_name)
-        report_names.update(app_names)
-        name_pairs = [app_names, *name_pairs]
+            rv[name] = handler_name
 
         names_dict = dict(_name_pairs)
         if names_dict:
             if log_names and log_names != _name_pairs and log_names != list(names_dict.keys()):
-                names_dict.update(dict(name_pairs))
-                report_names, name_pairs, app_handler_name = None, None, None
-            report_names = report_names or set(names_dict.keys()).union(names_dict.values())
-            name_pairs = name_pairs or [(key, val) for key, val in names_dict.items()]
-            app_handler_name = app_handler_name or names_dict.get(__name__)
+                rv = {**names_dict, **rv}
+            report_names = set(rv.keys()).union(rv.values())
+            app_handler_name = rv.get(__name__)
 
-        return report_names, name_pairs, app_handler_name
+        return report_names, rv, app_handler_name
 
     @classmethod
     def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
