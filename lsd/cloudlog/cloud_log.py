@@ -596,7 +596,7 @@ class CloudLog(logging.Logger):
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
-    def get_ignore_filter(cls, handler_name=None):
+    def get_apply_ignore_filter(cls, handler_name=None):
         """A high handler may need to ignore certain loggers that are being logged due to stdout_filter. """
         handler_name = handler_name or cls.SPLIT_HIGH_NAME
         high_handler = logging._handlers.get(handler_name, None)
@@ -619,7 +619,7 @@ class CloudLog(logging.Logger):
         return LowPassFilter(name='', level=level, title=_title)  # '' name means it applies to all considered logs.
 
     @classmethod
-    def get_stdout_filter(cls, high_level=None, handler_name=None, check_global=False):
+    def get_apply_stdout_filter(cls, high_level=None, handler_name=None, check_global=False):
         """The filter for stdout low handler. Allows low level logs AND to report logs recorded elsewhere. """
         handler_name = handler_name or cls.SPLIT_LOW_NAME
         low_handler = logging._handlers.get(handler_name, None)
@@ -643,8 +643,8 @@ class CloudLog(logging.Logger):
         """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
-        stdout_filter = cls.get_stdout_filter(high_level, low_name, check_global)
-        ignore_filter = cls.get_ignore_filter(high_name)
+        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
+        ignore_filter = cls.get_apply_ignore_filter(high_name)
         success = False
         names = stdout_filter.allow(name_or_loggers)
         if isinstance(names, str):
@@ -679,7 +679,7 @@ class CloudLog(logging.Logger):
             raise TypeError("Invalid parameters for setup_low_handler method. ")
         title, filter = None, None
         try:
-            filter = cls.get_stdout_filter(high_level, low_name, check_global=False)
+            filter = cls.get_apply_stdout_filter(high_level, low_name, check_global=False)
             handler = logging._handlers[low_name]
             assert filter.level == high_level
             assert not filter.name
