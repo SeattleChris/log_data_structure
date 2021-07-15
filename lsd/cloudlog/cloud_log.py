@@ -483,6 +483,7 @@ class CloudLog(logging.Logger):
         default_handle_name = default_handle_name or name
         handler_name = kwargs.pop('handler_name', default_handle_name)
         handler_level = kwargs.pop('handler_level', None)
+        high_level = kwargs.pop('high_level', self.DEFAULT_HIGH_LEVEL)
         parent = kwargs.pop('parent', logging.root)
         self.parent = self.normalize_parent(parent, name)
         cred_or_path = kwargs.pop('cred_or_path', None)
@@ -497,7 +498,7 @@ class CloudLog(logging.Logger):
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, **client_kwargs, **labels)
         if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
-            self.add_report_log(name, check_global=True)
+            self.add_report_log(name, high_level, check_global=True)
         elif isinstance(client, StreamClient):
             client.update_attachments(resource, labels, handler_name)
             self.propagate = False
