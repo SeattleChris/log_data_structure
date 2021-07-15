@@ -547,6 +547,7 @@ class CloudLog(logging.Logger):
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
         kwargs['level'] = level
+        report_names, name_pairs, app_handler_name = cls.process_names(log_names)
         try:
             logging.basicConfig(**kwargs)  # logging.root, or any loggers should not have been accessed yet.
             root = logging.root
@@ -559,11 +560,10 @@ class CloudLog(logging.Logger):
             print("********************** Unable to do basicConfig **********************")
             logging.exception(e)
             return False
-        report_names, name_pairs, app_handler_name = cls.process_names(log_names)
         if isinstance(client, GoogleClient):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
-            client.update_attachments(resource, labels, app_handler_name)
+            pass
         cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_pairs}
         cloud_config.update({'log_client': client, 'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
