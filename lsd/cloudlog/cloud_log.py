@@ -1080,7 +1080,7 @@ class CloudLog(logging.Logger):
         return result
 
     @staticmethod
-    def standard_env(config):
+    def standard_env(config=environ):
         """Determine code environnement, assuming environment variables 'GAE_INSTANCE' & 'GAE_ENV' are only set by GCP.
         Input:
             config: either a dict, a Config object, or (less ideally) None.
@@ -1088,15 +1088,15 @@ class CloudLog(logging.Logger):
             Boolean indicating the app is either running in 'GAE Standard' or locally.
         """
         expected = ('local', 'standard')
-        config = config or environ
         if isinstance(config, dict) or config is environ:
             gae_env = config.get('GAE_ENV', None)
             gae_instance = config.get('GAE_INSTANCE', None)
         else:
             gae_env = getattr(config, 'GAE_ENV', None)
             gae_instance = getattr(config, 'GAE_INSTANCE', None)
-        gae_env = gae_env or environ.get('GAE_ENV', None)
-        gae_instance = gae_instance or environ.get('GAE_INSTANCE', None)
+        if config is not environ:
+            gae_env = gae_env or environ.get('GAE_ENV', None)
+            gae_instance = gae_instance or environ.get('GAE_INSTANCE', None)
         code_environment = 'local' if not gae_instance else gae_env
         if code_environment in expected:
             return True
