@@ -4,11 +4,10 @@ from sys import stderr, stdout
 from os import environ
 from datetime import datetime as dt
 from flask import json
-from google.cloud.logging import Client as GoogleClient
+from google.cloud.logging import Resource, Client as BaseClientGoogle
 from google.cloud.logging.handlers import CloudLoggingHandler  # , setup_logging
 from google.cloud.logging_v2.handlers.transports import BackgroundThreadTransport
 from google.oauth2 import service_account
-from google.cloud.logging import Resource
 from .log_helpers import config_dict, _clean_level, standard_env
 
 DEFAULT_FORMAT = logging._defaultFormatter  # logging.Formatter('%(levelname)s:%(name)s:%(message)s')
@@ -163,13 +162,13 @@ class GoogleClient(BaseClientGoogle):
 
 class StreamClient:
     """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
-    BASE_CLIENT_PARAMETERS = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
+    BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
 
     def __init__(self, name='', resource=None, labels=None, handler=None, **kwargs):
-        base_params = {name: kwargs.pop(name, None) for name in self.BASE_CLIENT_PARAMETERS}
+        base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
         for key in ('project', 'client_info', 'client_options'):
-            base_params['_' + key] = base_params.pop(key)
-        for key, val in base_params.items():
+            base_kwargs['_' + key] = base_kwargs.pop(key)
+        for key, val in base_kwargs.items():
             setattr(self, key, val)
         # assert kwargs == {}
         self.handler_name = name.lower()
@@ -541,7 +540,7 @@ class CloudLog(logging.Logger):
         level = cls.DEBUG_LOG_LEVEL if debug else cls.DEFAULT_LEVEL
         level = cls.normalize_level(kwargs.pop('level', None), level)
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
-        root_handlers = cls.high_low_split_handlers(level, high_level, kwargs.pop('handlers', []))
+        root_handlers = cls.split_std_handlers(level, high_level, kwargs.pop('handlers', []))
         log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
@@ -567,48 +566,6 @@ class CloudLog(logging.Logger):
         cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_pairs}
         cloud_config.update({'log_client': client, 'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
-
-    @classmethod
-    def process_names(cls, log_names, _name_pairs=[]):
-        """Returns name reports, pairs, and app_handler_name from a list of str name or tuple (name, handler_name). """
-        if isinstance(log_names, str):
-            log_names = [log_names] if log_names not in (__name__, '') else []
-        if not log_names:
-            log_names = []
-        elif not isinstance(log_names, list):
-            raise TypeError(f"Expected a list (or str or None). Bad input: {log_names} ")
-        app_handler_name, app_names = None, None
-        name_pairs, report_names = [], set()
-        for name in log_names:
-            handler_name = None
-            if isinstance(name, tuple):
-                name, handler_name = name
-            name = cls.normalize_logger_name(name)
-            handler_name = cls.normalize_handler_name(handler_name or name)
-            if name == cls.APP_LOGGER_NAME:
-                app_handler_name = handler_name
-                app_names = (name, handler_name)
-                continue
-            names = (name, handler_name)
-            name_pairs.append(names)
-            report_names.update(names)
-        if not app_names:
-            name = cls.normalize_logger_name(__name__)
-            app_handler_name = cls.normalize_handler_name(name)
-            app_names = (name, app_handler_name)
-        report_names.update(app_names)
-        name_pairs = [app_names, *name_pairs]
-
-        names_dict = dict(_name_pairs)
-        if names_dict:
-            if log_names and log_names != _name_pairs and log_names != list(names_dict.keys()):
-                names_dict.update(dict(name_pairs))
-                report_names, name_pairs, app_handler_name = None, None, None
-            report_names = report_names or set(names_dict.keys()).union(names_dict.values())
-            name_pairs = name_pairs or [(key, val) for key, val in names_dict.items()]
-            app_handler_name = app_handler_name or names_dict.get(__name__)
-
-        return report_names, name_pairs, app_handler_name
 
     @classmethod
     def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
@@ -709,25 +666,104 @@ class CloudLog(logging.Logger):
             names_root_handlers = [getattr(ea, 'name', None) for ea in root_handlers]
             needed_root_handler_names = (cls.SPLIT_LOW_NAME, cls.SPLIT_HIGH_NAME)
             if not all(ea in names_root_handlers for ea in needed_root_handler_names):
-                root_handlers = cls.high_low_split_handlers(level, high_level, root_handlers)
+                root_handlers = cls.split_std_handlers(level, high_level, root_handlers)
                 logging.root.handlers = root_handlers
 
     @classmethod
-    def get_apply_ignore_filter(cls, handler_name=None):
-        """A high handler may need to ignore certain loggers that are being logged due to stdout_filter. """
-        handler_name = handler_name or cls.SPLIT_HIGH_NAME
-        high_handler = logging._handlers.get(handler_name, None)
-        if not high_handler:
-            raise LookupError(f"Could not find expected {handler_name} high handler. ")
-        targets = [filter for filter in high_handler.filters if isinstance(filter, IgnoreFilter)]
-        if len(targets) > 1:
-            warnings.warn(f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. ")
-        try:
-            ignore_filter = targets[0]
-        except IndexError:
-            ignore_filter = IgnoreFilter()
-            high_handler.addFilter(ignore_filter)
-        return ignore_filter
+    def non_standard_logging(cls, cred_path, low_level, high_level, resource, name_pairs=None):
+        """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
+        log_client = cls.make_client(cred_path)
+        log_client.get_default_handler()
+        log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
+        # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
+        handlers = logging.root.handlers.copy()
+        fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
+        low_handler, high_handler, *handlers = cls.split_std_handlers(low_level, high_level, handlers)
+        low_handler.setFormatter(fmt)
+        low_filter = low_handler.filters[0]
+        low_filter.allow(cls.APP_LOGGER_NAME)
+        ignore_filter = high_handler.filters[0]
+        ignore_filter.add(cls.APP_LOGGER_NAME)
+        logging.root.handlers.clear()
+        logging.root.addHandler(low_handler)
+        if len(handlers):
+            for handler in handlers:
+                handler.addFilter(ignore_filter)
+                if handler.level < high_level:
+                    handler.setLevel(high_level)
+                logging.root.addHandler(handler)
+        else:
+            high_handler.setFormatter(fmt)
+            logging.root.addHandler(high_handler)
+        app_handler_name = name_pairs[0][1] if name_pairs else cls.APP_HANDLER_NAME
+        handler = cls.make_handler(app_handler_name, high_level, resource, log_client, fmt=fmt)
+        logging.root.addHandler(handler)
+        if name_pairs is None:
+            name_pairs = []
+        elif isinstance(name_pairs, str):
+            name_pairs = [name_pairs]
+        cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in name_pairs]
+        return (log_client, *cloud_logs)
+
+    @classmethod
+    def process_names(cls, log_names, _name_pairs=[]):
+        """Returns name reports, pairs, and app_handler_name from a list of str name or tuple (name, handler_name). """
+        if isinstance(log_names, str):
+            log_names = [log_names] if log_names not in (__name__, '') else []
+        if not log_names:
+            log_names = []
+        elif not isinstance(log_names, list):
+            raise TypeError(f"Expected a list (or str or None). Bad input: {log_names} ")
+        app_handler_name, app_names = None, None
+        name_pairs, report_names = [], set()
+        for name in log_names:
+            handler_name = None
+            if isinstance(name, tuple):
+                name, handler_name = name
+            name = cls.normalize_logger_name(name)
+            handler_name = cls.normalize_handler_name(handler_name or name)
+            if name == cls.APP_LOGGER_NAME:
+                app_handler_name = handler_name
+                app_names = (name, handler_name)
+                continue
+            names = (name, handler_name)
+            name_pairs.append(names)
+            report_names.update(names)
+        if not app_names:
+            name = cls.normalize_logger_name(__name__)
+            app_handler_name = cls.normalize_handler_name(name)
+            app_names = (name, app_handler_name)
+        report_names.update(app_names)
+        name_pairs = [app_names, *name_pairs]
+
+        names_dict = dict(_name_pairs)
+        if names_dict:
+            if log_names and log_names != _name_pairs and log_names != list(names_dict.keys()):
+                names_dict.update(dict(name_pairs))
+                report_names, name_pairs, app_handler_name = None, None, None
+            report_names = report_names or set(names_dict.keys()).union(names_dict.values())
+            name_pairs = name_pairs or [(key, val) for key, val in names_dict.items()]
+            app_handler_name = app_handler_name or names_dict.get(__name__)
+
+        return report_names, name_pairs, app_handler_name
+
+    @classmethod
+    def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
+        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
+        low_name = low_name or cls.SPLIT_LOW_NAME
+        high_name = high_name or cls.SPLIT_HIGH_NAME
+        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
+        ignore_filter = cls.get_apply_ignore_filter(high_name)
+        success = False
+        names = stdout_filter.allow(name_or_loggers)
+        if isinstance(names, str):
+            names = [names]
+        if isinstance(names, list):
+            success = [ignore_filter.add(name) for name in names]
+            success = all(bool(ea) for ea in success) and len(success) > 0
+        else:
+            raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
+        return success
 
     @classmethod
     def make_stdout_filter(cls, level=None, _title='stdout'):
@@ -756,38 +792,21 @@ class CloudLog(logging.Logger):
         return stdout_filter
 
     @classmethod
-    def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
-        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
-        low_name = low_name or cls.SPLIT_LOW_NAME
-        high_name = high_name or cls.SPLIT_HIGH_NAME
-        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
-        ignore_filter = cls.get_apply_ignore_filter(high_name)
-        success = False
-        names = stdout_filter.allow(name_or_loggers)
-        if isinstance(names, str):
-            names = [names]
-        if isinstance(names, list):
-            success = [ignore_filter.add(name) for name in names]
-            success = all(bool(ea) for ea in success) and len(success) > 0
-        else:
-            raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
-        return success
-
-    @classmethod
-    def process_names(cls, log_names):
-        """Returns report_names and app_handler_name from a list of names or list of (name, handler_name) tuples. """
-        app_handler_name = None
-        report_names = set()
-        for name in log_names:
-            handler_name = None
-            if isinstance(name, tuple):
-                name, handler_name = name
-            name = cls.normalize_logger_name(name)
-            handler_name = cls.normalize_handler_name(handler_name or name)
-            if name == cls.APP_LOGGER_NAME:
-                app_handler_name = handler_name
-            report_names.update([name, handler_name])
-        return report_names, app_handler_name
+    def get_apply_ignore_filter(cls, handler_name=None):
+        """A high handler may need to ignore certain loggers that are being logged due to stdout_filter. """
+        handler_name = handler_name or cls.SPLIT_HIGH_NAME
+        high_handler = logging._handlers.get(handler_name, None)
+        if not high_handler:
+            raise LookupError(f"Could not find expected {handler_name} high handler. ")
+        targets = [filter for filter in high_handler.filters if isinstance(filter, IgnoreFilter)]
+        if len(targets) > 1:
+            warnings.warn(f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. ")
+        try:
+            ignore_filter = targets[0]
+        except IndexError:
+            ignore_filter = IgnoreFilter()
+            high_handler.addFilter(ignore_filter)
+        return ignore_filter
 
     @classmethod
     def setup_low_handler(cls, low_name, level, high_level):
@@ -854,7 +873,7 @@ class CloudLog(logging.Logger):
         return handler
 
     @classmethod
-    def high_low_split_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None, named_levels=True):
+    def split_std_handlers(cls, level, high_level, handlers=[], low_name=None, high_name=None, named_levels=True):
         """If unequal level & high_level, creates a split of high logs sent to stderr, low (or assigned) logs to stdout.
         Input:
             handlers: Optional additional handlers that will be added (usually to root) after the low & high handlers.
@@ -1096,41 +1115,6 @@ class CloudLog(logging.Logger):
         fmt = cls.clean_formatter(fmt)
         handler.setFormatter(fmt)
         return handler
-
-    @classmethod
-    def non_standard_logging(cls, cred_path, low_level, high_level, resource, extra_log_names=None):
-        """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
-        log_client = cls.make_client(cred_path)
-        log_client.get_default_handler()
-        log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
-        # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
-        handlers = logging.root.handlers.copy()
-        fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
-        low_handler, high_handler, *handlers = cls.high_low_split_handlers(low_level, high_level, handlers)
-        low_handler.setFormatter(fmt)
-        low_filter = low_handler.filters[0]
-        low_filter.allow(cls.APP_LOGGER_NAME)
-        ignore_filter = high_handler.filters[0]
-        ignore_filter.add(cls.APP_LOGGER_NAME)
-        logging.root.handlers.clear()
-        logging.root.addHandler(low_handler)
-        if len(handlers):
-            for handler in handlers:
-                handler.addFilter(ignore_filter)
-                if handler.level < high_level:
-                    handler.setLevel(high_level)
-                logging.root.addHandler(handler)
-        else:
-            high_handler.setFormatter(fmt)
-            logging.root.addHandler(high_handler)
-        handler = cls.make_handler(cls.APP_HANDLER_NAME, high_level, resource, log_client, fmt=fmt)
-        logging.root.addHandler(handler)
-        if extra_log_names is None:
-            extra_log_names = []
-        elif isinstance(extra_log_names, str):
-            extra_log_names = [extra_log_names]
-        cloud_logs = [CloudLog(name, low_level, resource, log_client, fmt=fmt) for name in extra_log_names]
-        return (log_client, *cloud_logs)
 
     @property
     def project(self):
