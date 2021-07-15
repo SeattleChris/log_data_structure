@@ -758,11 +758,7 @@ class CloudLog(logging.Logger):
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
         low_handler = cls.setup_low_handler(low_name, level, high_level)
-
-        high_handler = logging.StreamHandler(stderr)
-        high_handler.addFilter(IgnoreFilter())
-        high_handler.setLevel(high_level)
-        high_handler.set_name(high_name)
+        high_handler = cls.setup_high_handler(high_name, high_level)
         return [low_handler, high_handler, *handlers]
 
     @classmethod
