@@ -667,8 +667,11 @@ class CloudLog(logging.Logger):
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
             if not extra_loggers and log_names:
-                for name in log_names:
-                    cur_logger = CloudLog(name, level, automate=True, resource=resource, client=log_client)
+                cl_kwargs = {'level': level, 'automate': True, 'resource': resource, 'client': log_client}
+                for (name, handler_name) in name_pairs:
+                    if name == __name__:
+                        continue
+                    cur_logger = CloudLog(name, handler_name=handler_name, **cl_kwargs)
                     cur_logger.propagate = isinstance(log_client, GoogleClient)
                     extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
