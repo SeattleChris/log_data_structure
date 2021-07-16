@@ -10,7 +10,7 @@ def create_app(config, config_overrides=dict()):
     app.config.from_object(config)
     if config_overrides:
         app.config.update(config_overrides)
-    CloudLog.attach_loggers(app, config, log_setup, test_log_setup=True)
+    CloudLog.attach_loggers(app, config, _test_log=True, **log_setup)
 
     # Setup the data model. Import routes and events.
     with app.app_context():

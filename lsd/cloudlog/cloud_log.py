@@ -567,24 +567,25 @@ class CloudLog(logging.Logger):
             cls.add_report_log(report_names, high_level, check_global=True)
         else:  # isinstance(log_client, StreamClient):
             pass
-        cloud_config = {'level': level, 'high_level': high_level, 'name_pairs': name_dict}
+        cloud_config = {'level': level, 'high_level': high_level, 'name_dict': name_dict}
         cloud_config.update({'log_client': client, 'resource': resource._to_dict(), 'labels': labels, })
         return cloud_config
 
     @classmethod
-    def attach_loggers(cls, app, config=None, log_setup={}, log_names=[], test_log_setup=False):
+    def attach_loggers(cls, app, config=None, _test_log=False, **log_setup):
         """Called after Flask app is initiated. Ideally 'log_setup' from cls.basicConfig, but can work otherwise.
         Input:
             app: An instantiated and configured Flask app.
             config: Best if it is the config dict or object used to configure app. Uses app.config otherwise.
-            log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created values.
+            log_setup: A dict, ideally the return of CloudLog.basicConfig, can include manually created or added values.
             log_names: list of additional loggers, if any, besides the main app.logger.
             test_log_setup: For module development and possibly tests. Creates 'c_log' logger & its own StreamClient.
             Valid log_setup keys and value description:
+                name_dict: The logger-handler name pairs returned from cls.process_names durning basicConfig.
+                log_names: Optional overrides for name_dict. Can be given as str, list, or list of 2-tuple name pairs.
                 log_client: Either a google.cloud.logging.Client, a CloudLog.StreamClient, or None to create one.
                 resource: Either a google.cloud.logging.Resource, or a dict that can configure one, or None.
                 labels: An optional dict to construct or override defaults in creating a Resource or applied to logger.
-                name_pairs: The logger-handler name pairs returned from cls.process_names durning basicConfig.
                 high_level: Where the high-low handlers should split. Default depends on CloudLog class attributes.
                 level: The logging level for the application. Default depends on CloudLog class attributes & app.debug.
             The high_low_split handlers can be overridden by setting 'high_level' equal to 'level' in log_setup.
@@ -592,7 +593,7 @@ class CloudLog(logging.Logger):
             If app.testing is True, only sets app.log_client, app._resource, app.log_names to given values.
             Otherwise it sets these to either the given or computed values along with the following -
             Creates and attaches appropriate handler to app.logger.
-            For each str name in log_names, creates a logger and attaches it to app as an attribute with same name.
+            Creates & attaches (app.<logger_name>) a logger for each entry of the consolidated named_dict - log_names.
             If no valid log_client, creates a google.cloud.logging.Client or CloudLog.StreamClient as appropriate.
             If creating a google.cloud.logging.Client: Ensure, if appropriate, setting high_low_split handlers.
             If creating a CloudLog.StreamClient: app.logger gets a stdout handler with filter if needed for low levels.
@@ -604,11 +605,11 @@ class CloudLog(logging.Logger):
         logging.info('{:*^74}'.format(build))
         testing = app.testing
         debug = app.debug
-        test_log_setup = debug  # TODO: Update after creating and testing module.
+        _test_log = debug  # TODO: Update after creating and testing module.
         log_client = log_setup.pop('log_client', None)
         resource = log_setup.get('resource', None)
-        name_pairs = log_setup.get('name_pairs', [])
-        name_dict = cls.process_names(log_names, _names=name_pairs)
+        log_names = log_setup.pop('log_names', None)
+        name_dict = cls.process_names(log_names, _names=log_setup.pop('name_dict', {}))
         log_names = [key for key in name_dict if key != cls.APP_LOGGER_NAME]
         extra_loggers = []
         if not testing:
@@ -637,7 +638,7 @@ class CloudLog(logging.Logger):
                     cur_logger.propagate = isinstance(log_client, GoogleClient)
                     extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
-        if test_log_setup:
+        if _test_log:
             name = 'c_log'
             c_client = StreamClient(name, resource, labels)
             c_log = CloudLog(name, level, automate=True, resource=resource, client=c_client)
@@ -735,7 +736,7 @@ class CloudLog(logging.Logger):
             handler_name = cls.normalize_handler_name(handler_name or name)
             rv[name] = handler_name
         if _names:
-            if log_names and log_names not in (_names, _names, list(_names.keys())):
+            if log_names and log_names not in (_names, list(_names.keys())):
                 rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
         return rv
 
