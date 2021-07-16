@@ -710,8 +710,14 @@ class CloudLog(logging.Logger):
         return (log_client, *loggers)
 
     @classmethod
-    def process_names(cls, log_names, _name_pairs=[]):
-        """Returns name reports, pairs, and app_handler_name from a list of str name or tuple (name, handler_name). """
+    def process_names(cls, log_names, _names={}):
+        """Returns a dict of logger: handler names. Always contains app logger name and app handler name.
+        Input:
+            log_names: Can be a str, None, list of str, or list of 2-tuple name str, or a dict.
+            _names: Optional dict in the same form as output. Serve as default values if not overridden from log_names.
+        Output:
+            A dict with logger names as keys, and handler names as values (often identical). Always includes main app.
+        """
         if isinstance(log_names, str):
             log_names = [log_names] if log_names not in (__name__, '') else []
         if not log_names:
