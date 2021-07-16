@@ -3,14 +3,14 @@ from .cloudlog import CloudLog
 
 
 def create_app(config, config_overrides=dict()):
-    log_names = [__name__, 'alert', 'c_log'] or None
+    log_names = [__name__, 'alert', ] or None  # 'c_log'
     add_config_dict = [] or {} or None
-    log_setup = CloudLog.basicConfig(config, config_overrides, add_config_dict, log_names=log_names[:-1])
+    log_setup = CloudLog.basicConfig(config, config_overrides, add_config_dict, log_names=log_names)
     app = Flask(__name__)
     app.config.from_object(config)
     if config_overrides:
         app.config.update(config_overrides)
-    CloudLog.attach_loggers(app, config, log_setup, log_names[1], True)
+    CloudLog.attach_loggers(app, config, _test_log=True, **log_setup)
 
     # Setup the data model. Import routes and events.
     with app.app_context():
