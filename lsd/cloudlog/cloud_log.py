@@ -487,6 +487,8 @@ class CloudLog(logging.Logger):
         high_level = kwargs.pop('high_level', self.DEFAULT_HIGH_LEVEL)
         parent = kwargs.pop('parent', logging.root)
         self.parent = self.normalize_parent(parent, name)
+        self.low_level = handler_level or self.level
+        self.high_level = high_level  # Not likely unique (but possible) from self.DEFAULT_HIGH_LEVEL
         cred_or_path = kwargs.pop('cred_or_path', None)
         if client and cred_or_path:
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
@@ -499,7 +501,7 @@ class CloudLog(logging.Logger):
             client = getattr(logging.root, '_config_log_client', None)
         client = self.make_client(client, handler_name=handler_name, resource=resource, **client_kwargs, **labels)
         if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
-            self.add_report_log(name, high_level, check_global=True)
+            self.add_report_log(self, high_level, check_global=True)
         elif isinstance(client, StreamClient):
             # client.update_attachments(resource, labels, handler_name)
             self.propagate = False
@@ -743,6 +745,8 @@ class CloudLog(logging.Logger):
         """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
         low_name = low_name or cls.SPLIT_LOW_NAME
         high_name = high_name or cls.SPLIT_HIGH_NAME
+        if not high_level and isinstance(name_or_loggers, (cls, logging.Logger)):
+            high_level = getattr(name_or_loggers, 'high_level', None)
         stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
         ignore_filter = cls.get_apply_ignore_filter(high_name)
         success = False
