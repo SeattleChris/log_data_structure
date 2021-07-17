@@ -601,8 +601,8 @@ class CloudLog(logging.Logger):
         log_client = log_setup.pop('log_client', None)
         resource = log_setup.get('resource', None)
         log_names = log_setup.pop('log_names', None)
-        name_dict = cls.process_names(log_names, _names=log_setup.pop('name_dict', {}))
-        log_names = [key for key in name_dict if key != cls.APP_LOGGER_NAME]
+        names = cls.process_names(log_names, _names=log_setup.pop('name_dict', {}))
+        log_names = [name for name in names if name != cls.APP_LOGGER_NAME]
         extra_loggers = []
         if not testing:
             cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -657,8 +657,8 @@ class CloudLog(logging.Logger):
     @classmethod
     def alt_setup_logging(cls, app, log_client, level, high_level, resource, names):
         """Used for standard environment, but not using .basicConfig for pre-setup. """
-        app_handler_name = name_dict[cls.APP_LOGGER_NAME]
-        report_names = set(name_dict.keys()).union(name_dict.values())
+        app_handler_name = names[cls.APP_LOGGER_NAME]
+        report_names = set(names.keys()).union(names.values())
         if isinstance(log_client, StreamClient):
             app.logger.propagate = False
             if high_level > level:
@@ -682,7 +682,7 @@ class CloudLog(logging.Logger):
     def non_standard_logging(cls, log_client, level, high_level, resource, names):
         """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
         log_client.get_default_handler()
-        log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
+        log_client.setup_logging(log_level=level)  # log_level sets the logger, not the handler.
         # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
         handlers = logging.root.handlers.copy()
         fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
