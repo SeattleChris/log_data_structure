@@ -94,61 +94,33 @@ class LowPassFilter(logging.Filter):
         return '<{} only {} under {}{}>'.format(self.__class__.__name__, name, self.below_level, allowed)
 
 
-class GoogleClient(BaseClientGoogle):
-    """Extends google.cloud.logging.Client with StreamClient signature & attr: resource, labels, handler_name. """
-    BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
+class ClientResourcePropertiesMixIn:
+    """Ensures a logging Client has attributes for resource, labels, handler_name - processed in that order. """
 
-    def __init__(self, handler_name='', resource=None, labels=None, handler=None, **kwargs):
-        base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
-        # assert kwargs == {}
-        super().__init__(**base_kwargs)
-        self.handler_name = handler_name.lower()
+    def __init__(self, resource=None, labels=None, handler=None, **kwargs):
         self.resource = resource or {}
+        self._labels = {}
         self.labels = labels or {}
-        self._handler = None
-        if handler:
-            self.handler = handler
-
-    def update_attachments(self, resource=None, labels=None, handler=None):
-        """Helpful since the order matters. These may be added to the Client later to assist in management. """
-        name = None
-        if isinstance(resource, Resource):
-            self.resource = resource
-        if isinstance(labels, dict):
-            self.labels = labels
-        if isinstance(handler, str):
-            name = handler.lower()
-        elif isinstance(handler, logging.Handler):
-            name = getattr(handler, 'name', None)
-            if not name:
-                self.handler = handler
-        if name:
-            self.handler_name = name
-
-    @property
-    def handler(self):
-        """If possible get from weakref created in logging. Otherwise maintain a strong referenced object. """
-        rv = self._handler or logging._handlers.get(self.handler_name, None)
-        return rv
-
-    @handler.setter
-    def handler(self, handler_param):
-        handler = handler_param if isinstance(handler_param, logging.Handler) else None
-        if handler and getattr(handler, 'name', None):
-            handler = None
-        self._handler = handler  # If None, forces a lookup on logging._handlers.
+        self.handler_name = self.get_handler_name(handler)
+        self._kwargs = kwargs
 
     @property
     def labels(self):
-        """If the expected 'project_id' is not in labels, will attempt to get labels from resource or _project. """
+        """Returns labels dict, finding 'project_id' if needed. Includes resource labels, keeping overridden values. """
         labels_have_valid_data = bool(self._labels.get('project_id', None))
         if not labels_have_valid_data:
-            try:
-                labels = getattr(self.resource, 'labels', {}).copy()
-            except Exception:
-                labels = {}
-            project = labels.get('project_id') or labels.get('project')
-            labels['project_id'] = project or self._project
+            resource = getattr(self, 'resource', {})
+            labels = resource.get('labels', {}) if isinstance(resource, dict) else getattr(resource, 'labels', {})
+            project = labels.get('project_id', None) or labels.get('project', None)
+            labels.update(self._labels)  # to maintain overridden or additional label values.
+            possible_attr = ('_project', 'project', 'project_id', '_project_id')
+            possible_attr = (ea for ea in possible_attr)
+            while project is None:
+                try:
+                    project = getattr(self, next(possible_attr), None)
+                except StopIteration:
+                    project = ''
+            labels['project_id'] = project
             self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
         return self._labels
 
@@ -157,39 +129,118 @@ class GoogleClient(BaseClientGoogle):
         if not isinstance(labels, dict):
             raise TypeError("Expected a dict input for labels. ")
         res_labels = getattr(self.resource, 'labels', {})
-        self._labels = labels = {**res_labels, **labels}
+        current_res_label_values = {key: val for key, val in self._labels.items() if key in res_labels}
+        self._labels = {**current_res_label_values, **labels}
 
+    @property
+    def handler(self):
+        """Retrieved from a weakref created in logging. If is missing resource or labels, pass to prepare_handler. """
+        if not self.handler_name:
+            return None
+        handler = logging._handlers.get(self.handler_name, None)
+        expected_attr = ('resource', 'labels')
+        if handler and not all(hasattr(handler, ea) for ea in expected_attr):
+            handler = self.prepare_handler(handler)
+        # elif not handler:
+        #     raise KeyError(f"Unable to find '{self.handler_name}' handler. ")
+        return handler
 
-class StreamClient:
-    """Substitute for google.cloud.logging.Client, whose presence triggers standard library logging techniques. """
-    BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
+    def get_handler_name(self, handler):
+        """Return name from given str (already normalized) or handler object. Pass given handler to prepare_handler. """
+        if not handler:
+            name = ''
+        elif isinstance(handler, str):
+            name = handler
+        elif isinstance(handler, logging.Handler):
+            name = getattr(handler, 'name', '')
+            self.prepare_handler(handler)
+        else:
+            raise TypeError(f"Expected a str or Handler to get handler name. Failed: {handler}")
+        return name
 
-    def __init__(self, handler_name='', resource=None, labels=None, handler=None, **kwargs):
-        base_kwargs = {key: kwargs.pop(key, None) for key in self.BASE_CLIENT_KW}
-        for key in ('project', 'client_info', 'client_options'):
-            base_kwargs['_' + key] = base_kwargs.pop(key)
-        for key, val in base_kwargs.items():
-            setattr(self, key, val)
-        # assert kwargs == {}
-        self.handler_name = handler_name.lower()
-        self.resource = resource or {}
-        self.labels = labels or {}
-        self._handler = None
-        if handler:
-            self.handler = handler
+    def prepare_handler(self, handler):
+        """Given an already created handler, attach properties if not present: resource, labels, project, full_name. """
+        handler.resource = getattr(handler, 'resource', None) or self.resource
+        handler.labels = getattr(handler, 'labels', None) or self.labels
+        seed_attr = ('project', '_project', 'project_id', '_project_id')
+        possible_attr = (ea for ea in [*seed_attr, *[ea + '_' for ea in seed_attr]])
+        attr, project, assign_attr = None, None, False
+        while project is None:
+            try:
+                attr = next(possible_attr)
+                if assign_attr or hasattr(handler, attr):
+                    assign_attr = True
+                    goal_value = getattr(handler, attr, None) or self.project  # correct value if hasattr or not.
+                    setattr(handler, attr, goal_value)
+                    project = getattr(handler, attr, None)
+                    project = project if project == goal_value else None
+            except StopIteration:
+                if assign_attr:
+                    project, attr = self.project, None
+                else:
+                    project, assign_attr = None, True
+                    possible_attr = (ea for ea in [*seed_attr, *[ea + '_' for ea in seed_attr]])
+        external_transport = getattr(handler, 'transport', None)
+        if isinstance(external_transport, StreamTransport):
+            external_transport = None
+        if external_transport and not hasattr(handler, 'full_name'):
+            name = getattr(handler, 'name', self.handler_name)
+            setattr(handler, 'full_name', f"projects/{project}/logs/{name}")
+        return handler
 
     def update_attachments(self, resource=None, labels=None, handler=None):
-        """Helpful since the order matters. These may be added to the StreamClient later to assist in management. """
-        if isinstance(resource, Resource):
+        """Update in the correct order. The 'handler' can be a str; If a Handler, also passed to prepare_handler. """
+        if resource and isinstance(resource, (Resource, dict)):
             self.resource = resource
-        if isinstance(labels, dict):
+        if labels and isinstance(labels, dict):
             self.labels = labels
-        if isinstance(handler, str):
-            self.handler_name = handler.lower()
-        elif handler:
-            self.handler = handler
+        if handler:
+            self.handler_name = self.get_handler_name(handler) or self.handler_name
 
-    def prepare_handler(self, handler_param):
+    def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
+        """Return kwargs for base Client init. Try to determine project from init parameters. """
+        BASE_CLIENT_KW = ('project', 'credentials', '_http', '_use_grpc', 'client_info', 'client_options', )
+        base_kwargs = {key: kwargs.pop(key) for key in BASE_CLIENT_KW if key in kwargs}
+        if not base_kwargs.get('project', None):
+            res_labels = {}
+            if isinstance(resource, Resource):
+                res_labels = getattr(resource, 'labels', {})
+            elif isinstance(resource, dict):
+                res_labels = resource.get('labels', {})
+            if isinstance(labels, dict):
+                res_labels.update(labels)
+            project = res_labels.get('project', None) or res_labels.get('project_id', None)
+            if project:
+                base_kwargs['project'] = project
+        return base_kwargs
+
+
+class GoogleClient(BaseClientGoogle, ClientResourcePropertiesMixIn):
+    """Extends google.cloud.logging.Client with StreamClient signature & attr: resource, labels, handler_name. """
+
+    def __init__(self, resource=None, labels=None, handler=None, **kwargs):
+        base_kwargs = self.base_kwargs_from_init(resource, labels, handler, **kwargs)
+        BaseClientGoogle.__init__(self, **base_kwargs)
+        ClientResourcePropertiesMixIn.__init__(self, resource, labels, handler, **kwargs)
+
+
+class StreamClient(ClientResourcePropertiesMixIn):
+    """This substitute for google.cloud.logging.Client will use techniques similar to standard library logging. """
+
+    def __init__(self, resource=None, labels=None, handler='', **kwargs):
+        base_kwargs = self.base_kwargs_from_init(resource, labels, handler, **kwargs)
+        for key, val in base_kwargs.items():
+            setattr(self, key, val)  # This may include project.
+        super().__init__(self, resource, labels, handler, **kwargs)
+
+    def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
+        base_kwargs = super().base_kwargs_from_init(resource, labels, handler, **kwargs)
+        for key in ('credentials', 'client_info', 'client_options'):
+            base_kwargs['_' + key] = base_kwargs.pop(key, None)
+        base_kwargs['_http_internal'] = base_kwargs.pop('_http', None)
+        return base_kwargs
+
+    def create_handler(self, handler_param):
         """Creates or updates a logging.Handler with the correct name and attaches the labels and resource. """
         if isinstance(handler_param, str):
             handler = logging._handlers.get(handler_param, None)
@@ -207,69 +258,8 @@ class StreamClient:
                 logging.exception(e)
                 raise ValueError("StreamClient handler must be a stream (like stdout) or a Handler class or instance. ")
             handler.set_name(self.handler_name)
-        handler.labels = self.labels
-        handler.resource = self.resource
-        if not getattr(handler, 'project', None):  # Either doesn't have the attr, or set to None.
-            if not hasattr(handler, 'project'):
-                attr = 'project'
-            elif hasattr(handler, '_project'):
-                attr = '_project'
-            setattr(handler, attr, self.project)
-        if not hasattr(handler, 'full_name'):
-            handler.full_name = f"projects/{handler.project}/logs/{handler.name}"
+        handler = self.prepare_handler(handler)
         return handler
-
-    @property
-    def handler(self):
-        """If possible get from weakref created in logging. Otherwise maintain a strong referenced object. """
-        rv = self._handler or logging._handlers.get(self.handler_name, None)
-        if not rv:
-            rv = self.prepare_handler(stderr)
-            self.handler = rv
-        return rv
-
-    @handler.setter
-    def handler(self, handler_param):
-        handler = self.prepare_handler(handler_param)
-        name = getattr(handler, 'name', None)
-        if not name or name not in logging._handlers:
-            self._handler = handler
-        else:
-            self._handler = None  # Forces a lookup on logging._handlers, or creation if not present.
-
-    @property
-    def project(self):
-        """If unknown, computes & sets from labels, resource, or environ. Raises LookupError if unable to determine. """
-        if not getattr(self, '_project', None):
-            labels = self.labels  # To only compute once if not yet valid.
-            project = labels.get('project_id') or labels.get('project')  # checks resource if labels not valid yet.
-            if not project:
-                project = environ.get('GOOGLE_CLOUD_PROJECT') or environ.get('PROJECT_ID')
-            if not project:
-                raise LookupError("Unable to discover the required Project id. ")
-            self._project = project
-        return self._project
-
-    @property
-    def labels(self):
-        """If the expected 'project_id' is not in labels, will attempt to get labels from resource or _project. """
-        labels_have_valid_data = bool(self._labels.get('project_id', None))
-        if not labels_have_valid_data:
-            try:
-                labels = getattr(self.resource, 'labels', {}).copy()
-            except Exception:
-                labels = {}
-            project = labels.get('project_id') or labels.get('project')
-            labels['project_id'] = project or self._project
-            self._labels.update(labels)  # If all values were None or '', then labels is not yet valid.
-        return self._labels
-
-    @labels.setter
-    def labels(self, labels):
-        if not isinstance(labels, dict):
-            raise TypeError("Expected a dict input for labels. ")
-        res_labels = getattr(self.resource, 'labels', {})
-        self._labels = labels = {**res_labels, **labels}
 
     def logger(self, name):
         """Similar interface of google.cloud.logging.Client, but returns standard library logging.Handler instance. """
@@ -353,7 +343,7 @@ class CloudParamHandler(CloudLoggingHandler):
 
     def __init__(self, client, name='param_handler', resource=None, labels=None, stream=None, ignore=None):
         if not isinstance(client, (StreamClient, GoogleClient)):
-            raise ValueError("Expected a StreamClient or cloud logging Client. ")
+            raise ValueError("Expected a StreamClient or other appropriate cloud logging Client. ")
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
         # handler_attr = ('name', 'transport(client, name)', 'client', 'project_id', 'resource', 'labels')
@@ -444,15 +434,16 @@ class CloudLog(logging.Logger):
     CLIENT_KW = ('project', 'handler_name', 'handler', 'credentials', 'client_info', 'client_options')
     # also: '_http', '_use_grpc'
 
-    def __init__(self, name=None, level=logging.NOTSET, automate=False, **kwargs):
+    def __init__(self, name=None, level=logging.NOTSET, automate=False, replace=False, **kwargs):
         name = self.normalize_logger_name(name)
         if level:
             level = self.normalize_level(level)
         super().__init__(name, level=level)
         if automate:
             self.automated_structure(**kwargs)
+        self.add_loggerDict(replace)
 
-    def automated_structure(self, resource=None, client=None, replace=False, check_global=True, **kwargs):
+    def automated_structure(self, resource=None, client=None, check_global=True, **kwargs):
         """Typically only used for the core logers of the main code. This will add resource, labels, client, etc.
         Input:
             resource: can be None, a google.cloud.logging.Resource, or a dict translation of one.
@@ -482,33 +473,34 @@ class CloudLog(logging.Logger):
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
         default_handle_name = default_handle_name or name
-        handler_name = kwargs.pop('handler_name', default_handle_name)
+        handler_name = kwargs.pop('handler_name', None) or default_handle_name
         handler_level = kwargs.pop('handler_level', None)
-        high_level = kwargs.pop('high_level', self.DEFAULT_HIGH_LEVEL)
+        high_level = self.normalize_level(kwargs.pop('high_level', None), self.DEFAULT_HIGH_LEVEL, named=False)
         parent = kwargs.pop('parent', logging.root)
-        self.parent = self.normalize_parent(parent, name)
-        self.low_level = handler_level or self.level
-        self.high_level = high_level  # Not likely unique (but possible) from self.DEFAULT_HIGH_LEVEL
         cred_or_path = kwargs.pop('cred_or_path', None)
         if client and cred_or_path:
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
         resource, labels, kwargs = self.prepare_res_label(check_global=check_global, resource=resource, **kwargs)
-        self.labels = labels
-        self.resource = resource._to_dict()
+        client_kwargs.update(resource=resource, labels=labels, handler_name=handler_name)
         if client is None and check_global:
             client = getattr(logging.root, '_config_log_client', None)
-        client = self.make_client(client, handler_name=handler_name, resource=resource, **client_kwargs, **labels)
+        client = self.make_client(client, **client_kwargs)
+        handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
+        client.update_attachments(handler=handler)
+        handler_level = handler.level
+        self.addHandler(handler)
+        self.client = client  # accessing self.project may, on edge cases, set self.client
+        self.labels = labels
+        self.resource = resource._to_dict()
+        self.low_level = max([handler_level, self.level]) if handler_level else self.level
+        self.high_level = high_level  # Not likely unique from self.DEFAULT_HIGH_LEVEL (but possible)
+        self.parent = self.normalize_parent(parent, name)
         if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
             self.add_report_log(self, high_level, check_global=True)
         elif isinstance(client, StreamClient):
-            # client.update_attachments(resource, labels, handler_name)
             self.propagate = False
-        self.client = client  # accessing self.project may, on edge cases, set self.client
-        handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
-        self.addHandler(handler)
-        self.add_loggerDict(replace)
 
     @classmethod
     def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
@@ -609,8 +601,8 @@ class CloudLog(logging.Logger):
         log_client = log_setup.pop('log_client', None)
         resource = log_setup.get('resource', None)
         log_names = log_setup.pop('log_names', None)
-        name_dict = cls.process_names(log_names, _names=log_setup.pop('name_dict', {}))
-        log_names = [key for key in name_dict if key != cls.APP_LOGGER_NAME]
+        names = cls.process_names(log_names, _names=log_setup.pop('name_dict', {}))
+        log_names = [name for name in names if name != cls.APP_LOGGER_NAME]
         extra_loggers = []
         if not testing:
             cred_var = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -624,20 +616,17 @@ class CloudLog(logging.Logger):
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             if not standard_env(config):
-                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, name_dict)
+                log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
+                log_names, *extra_loggers = cls.non_standard_logging(log_client, level, high_level, resource, names)
             elif not isinstance(log_client, (GoogleClient, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
-                cls.alt_setup_logging(app, log_client, level, high_level, resource, name_dict)
-            app_handler_name = name_dict[cls.APP_LOGGER_NAME]
+                log_names, *extra_loggers = cls.alt_setup_logging(app, log_client, level, high_level, resource, names)
+            app_handler_name = names[cls.APP_LOGGER_NAME]
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
-            if not extra_loggers and log_names:
-                cl_kwargs = {'level': level, 'automate': True, 'resource': resource, 'client': log_client}
-                for name in log_names:
-                    cur_logger = CloudLog(name, handler_name=name_dict[name], **cl_kwargs)
-                    cur_logger.propagate = isinstance(log_client, GoogleClient)
-                    extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
+            if not extra_loggers:
+                log_names, extra_loggers = cls.make_extra_loggers(names, level, log_client, resource)
         if _test_log:
             name = 'c_log'
             c_client = StreamClient(name, resource, labels)
@@ -654,10 +643,22 @@ class CloudLog(logging.Logger):
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
-    def alt_setup_logging(cls, app, log_client, level, high_level, resource, name_dict):
+    def make_extra_loggers(cls, names, level, client, resource, **kwargs):
+        """Input names dict, plus logger parameters. Returns a logger & log names lists (excludes app.logger). """
+        kwargs.update({'automate': True, 'client': client, 'resource': resource, 'level': level})
+        log_names = [name for name in names if name != cls.APP_LOGGER_NAME]
+        loggers = []
+        for name in log_names:
+            cur_logger = CloudLog(name, handler_name=names[name], **kwargs)
+            cur_logger.propagate = isinstance(client, GoogleClient)
+            loggers.append(cur_logger)
+        return log_names, loggers
+
+    @classmethod
+    def alt_setup_logging(cls, app, log_client, level, high_level, resource, names):
         """Used for standard environment, but not using .basicConfig for pre-setup. """
-        app_handler_name = name_dict[cls.APP_LOGGER_NAME]
-        report_names = set(name_dict.keys()).union(name_dict.values())
+        app_handler_name = names[cls.APP_LOGGER_NAME]
+        report_names = set(names.keys()).union(names.values())
         if isinstance(log_client, StreamClient):
             app.logger.propagate = False
             if high_level > level:
@@ -674,17 +675,18 @@ class CloudLog(logging.Logger):
             if not all(ea in names_root_handlers for ea in needed_root_handler_names):
                 root_handlers = cls.split_std_handlers(level, high_level, root_handlers)
                 logging.root.handlers = root_handlers
+        log_names, loggers = cls.make_extra_loggers(names, level, log_client, resource)
+        return (log_names, *loggers)
 
     @classmethod
-    def non_standard_logging(cls, cred_path, low_level, high_level, resource, names={}):
+    def non_standard_logging(cls, log_client, level, high_level, resource, names):
         """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
-        log_client = cls.make_client(cred_path)
         log_client.get_default_handler()
-        log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
+        log_client.setup_logging(log_level=level)  # log_level sets the logger, not the handler.
         # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
         handlers = logging.root.handlers.copy()
         fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
-        low_handler, high_handler, *handlers = cls.split_std_handlers(low_level, high_level, handlers)
+        low_handler, high_handler, *handlers = cls.split_std_handlers(level, high_level, handlers)
         low_handler.setFormatter(fmt)
         low_filter = low_handler.filters[0]
         low_filter.allow(cls.APP_LOGGER_NAME)
@@ -704,9 +706,8 @@ class CloudLog(logging.Logger):
         app_handler_name = names.get(cls.APP_LOGGER_NAME, cls.APP_HANDLER_NAME)
         handler = cls.make_handler(app_handler_name, high_level, resource, log_client, fmt=fmt)
         logging.root.addHandler(handler)
-        kwargs = dict(level=low_level, automate=True, log_client=log_client, resource=resource, fmt=fmt)
-        loggers = [CloudLog(name, handler_name=names[name], **kwargs) for name in names if name != cls.APP_LOGGER_NAME]
-        return (log_client, *loggers)
+        log_names, loggers = cls.make_extra_loggers(names, level, log_client, resource, fmt=fmt)
+        return (log_names, *loggers)
 
     @classmethod
     def process_names(cls, log_names, _names={}):
@@ -963,11 +964,6 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if cred_or_path is None and check_global:
-            cred_or_path = getattr(logging.root, '._config_log_client', None)
-        if isinstance(cred_or_path, (GoogleClient, StreamClient)):
-            return cred_or_path
-
         if res_label:
             resource, labels, kwargs = cls.prepare_res_label(check_global, **kwargs)
             add_client_kwargs = dict(resource=resource, labels=labels)
@@ -977,6 +973,13 @@ class CloudLog(logging.Logger):
             add_client_kwargs['project'] = kwargs['project']
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         client_kwargs.update(add_client_kwargs)
+        if cred_or_path is None and check_global:
+            cred_or_path = getattr(logging.root, '._config_log_client', None)
+        if isinstance(cred_or_path, (GoogleClient, StreamClient)):
+            client = cred_or_path
+
+            return client
+
         if isinstance(cred_or_path, service_account.Credentials):
             credentials = cred_or_path
         elif cred_or_path:
@@ -1182,6 +1185,7 @@ class CloudLog(logging.Logger):
         return {
             'CloudLog': CloudLog,
             'LowPassFilter': LowPassFilter,
+            'GoogleClient': GoogleClient,
             'StreamClient': StreamClient,
             'StreamTransport': StreamTransport,
             'test_loggers': test_loggers,
