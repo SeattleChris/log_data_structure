@@ -616,11 +616,12 @@ class CloudLog(logging.Logger):
             high_level = cls.normalize_level(log_setup.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
             resource, labels, log_setup = cls.prepare_res_label(config=config, **log_setup)
             if not standard_env(config):
-                log_client, *extra_loggers = cls.non_standard_logging(cred_path, level, high_level, resource, name_dict)
+                log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
+                log_names, *extra_loggers = cls.non_standard_logging(log_client, level, high_level, resource, names)
             elif not isinstance(log_client, (GoogleClient, StreamClient)):
                 log_client = cls.make_client(cred_path, resource=resource, labels=labels, config=config)
-                cls.alt_setup_logging(app, log_client, level, high_level, resource, name_dict)
-            app_handler_name = name_dict[cls.APP_LOGGER_NAME]
+                log_names, *extra_loggers = cls.alt_setup_logging(app, log_client, level, high_level, resource, names)
+            app_handler_name = names[cls.APP_LOGGER_NAME]
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
             cls.add_report_log(extra_loggers, high_level)
@@ -678,9 +679,8 @@ class CloudLog(logging.Logger):
         return (log_names, *loggers)
 
     @classmethod
-    def non_standard_logging(cls, cred_path, low_level, high_level, resource, names={}):
+    def non_standard_logging(cls, log_client, level, high_level, resource, names):
         """Function to setup logging with google.cloud.logging when not local or on Google Cloud App Standard. """
-        log_client = cls.make_client(cred_path)
         log_client.get_default_handler()
         log_client.setup_logging(log_level=low_level)  # log_level sets the logger, not the handler.
         # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
