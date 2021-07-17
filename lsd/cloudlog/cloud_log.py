@@ -189,15 +189,13 @@ class ClientResourcePropertiesMixIn:
         return handler
 
     def update_attachments(self, resource=None, labels=None, handler=None):
-        """Helpful since the order matters. These may be added to the StreamClient later to assist in management. """
-        if isinstance(resource, Resource):
+        """Update in the correct order. The 'handler' can be a str; If a Handler, also passed to prepare_handler. """
+        if resource and isinstance(resource, (Resource, dict)):
             self.resource = resource
-        if isinstance(labels, dict):
+        if labels and isinstance(labels, dict):
             self.labels = labels
-        if isinstance(handler, str):
-            self.handler_name = handler.lower()
-        elif handler:
-            self.handler = handler
+        if handler:
+            self.handler_name = self.get_handler_name(handler) or self.handler_name
 
     def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
         """Return kwargs for base Client init. Try to determine project from init parameters. """
