@@ -434,15 +434,16 @@ class CloudLog(logging.Logger):
     CLIENT_KW = ('project', 'handler_name', 'handler', 'credentials', 'client_info', 'client_options')
     # also: '_http', '_use_grpc'
 
-    def __init__(self, name=None, level=logging.NOTSET, automate=False, **kwargs):
+    def __init__(self, name=None, level=logging.NOTSET, automate=False, replace=False, **kwargs):
         name = self.normalize_logger_name(name)
         if level:
             level = self.normalize_level(level)
         super().__init__(name, level=level)
         if automate:
             self.automated_structure(**kwargs)
+        self.add_loggerDict(replace)
 
-    def automated_structure(self, resource=None, client=None, replace=False, check_global=True, **kwargs):
+    def automated_structure(self, resource=None, client=None, check_global=True, **kwargs):
         """Typically only used for the core logers of the main code. This will add resource, labels, client, etc.
         Input:
             resource: can be None, a google.cloud.logging.Resource, or a dict translation of one.
@@ -472,33 +473,34 @@ class CloudLog(logging.Logger):
         fmt = kwargs.pop('fmt', kwargs.pop('format', DEFAULT_FORMAT))
         default_handle_name = self.APP_HANDLER_NAME if name == self.APP_LOGGER_NAME else self.DEFAULT_HANDLER_NAME
         default_handle_name = default_handle_name or name
-        handler_name = kwargs.pop('handler_name', default_handle_name)
+        handler_name = kwargs.pop('handler_name', None) or default_handle_name
         handler_level = kwargs.pop('handler_level', None)
-        high_level = kwargs.pop('high_level', self.DEFAULT_HIGH_LEVEL)
+        high_level = self.normalize_level(kwargs.pop('high_level', None), self.DEFAULT_HIGH_LEVEL, named=False)
         parent = kwargs.pop('parent', logging.root)
-        self.parent = self.normalize_parent(parent, name)
-        self.low_level = handler_level or self.level
-        self.high_level = high_level  # Not likely unique (but possible) from self.DEFAULT_HIGH_LEVEL
         cred_or_path = kwargs.pop('cred_or_path', None)
         if client and cred_or_path:
             raise ValueError("Unsure how to prioritize the passed 'client' and 'cred_or_path' values. ")
         client = client or cred_or_path
         client_kwargs = {key: kwargs.pop(key) for key in ('client_info', 'client_options') if key in kwargs}
         resource, labels, kwargs = self.prepare_res_label(check_global=check_global, resource=resource, **kwargs)
-        self.labels = labels
-        self.resource = resource._to_dict()
+        client_kwargs.update(resource=resource, labels=labels, handler_name=handler_name)
         if client is None and check_global:
             client = getattr(logging.root, '_config_log_client', None)
-        client = self.make_client(client, handler_name=handler_name, resource=resource, **client_kwargs, **labels)
+        client = self.make_client(client, **client_kwargs)
+        handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
+        client.update_attachments(handler=handler)
+        handler_level = handler.level
+        self.addHandler(handler)
+        self.client = client  # accessing self.project may, on edge cases, set self.client
+        self.labels = labels
+        self.resource = resource._to_dict()
+        self.low_level = max([handler_level, self.level]) if handler_level else self.level
+        self.high_level = high_level  # Not likely unique from self.DEFAULT_HIGH_LEVEL (but possible)
+        self.parent = self.normalize_parent(parent, name)
         if isinstance(client, GoogleClient):  # Most likely expeected outcome - logs to external stream.
             self.add_report_log(self, high_level, check_global=True)
         elif isinstance(client, StreamClient):
-            # client.update_attachments(resource, labels, handler_name)
             self.propagate = False
-        self.client = client  # accessing self.project may, on edge cases, set self.client
-        handler = self.make_handler(handler_name, handler_level, resource, client, fmt=fmt, stream=stream, **labels)
-        self.addHandler(handler)
-        self.add_loggerDict(replace)
 
     @classmethod
     def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
@@ -953,11 +955,6 @@ class CloudLog(logging.Logger):
     @classmethod
     def make_client(cls, cred_or_path=None, res_label=True, check_global=True, **kwargs):
         """Creates the appropriate client, with appropriate handler for the environment, as used by other methods. """
-        if cred_or_path is None and check_global:
-            cred_or_path = getattr(logging.root, '._config_log_client', None)
-        if isinstance(cred_or_path, (GoogleClient, StreamClient)):
-            return cred_or_path
-
         if res_label:
             resource, labels, kwargs = cls.prepare_res_label(check_global, **kwargs)
             add_client_kwargs = dict(resource=resource, labels=labels)
@@ -967,6 +964,13 @@ class CloudLog(logging.Logger):
             add_client_kwargs['project'] = kwargs['project']
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         client_kwargs.update(add_client_kwargs)
+        if cred_or_path is None and check_global:
+            cred_or_path = getattr(logging.root, '._config_log_client', None)
+        if isinstance(cred_or_path, (GoogleClient, StreamClient)):
+            client = cred_or_path
+
+            return client
+
         if isinstance(cred_or_path, service_account.Credentials):
             credentials = cred_or_path
         elif cred_or_path:
