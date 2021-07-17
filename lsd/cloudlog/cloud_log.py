@@ -343,7 +343,7 @@ class CloudParamHandler(CloudLoggingHandler):
 
     def __init__(self, client, name='param_handler', resource=None, labels=None, stream=None, ignore=None):
         if not isinstance(client, (StreamClient, GoogleClient)):
-            raise ValueError("Expected a StreamClient or cloud logging Client. ")
+            raise ValueError("Expected a StreamClient or other appropriate cloud logging Client. ")
         transport = StreamTransport if isinstance(client, StreamClient) else BackgroundThreadTransport
         super().__init__(client, name=name, transport=transport, resource=resource, labels=labels, stream=stream)
         # handler_attr = ('name', 'transport(client, name)', 'client', 'project_id', 'resource', 'labels')
@@ -686,7 +686,7 @@ class CloudLog(logging.Logger):
         # TODO: Verify - Does any modifications to the default 'python' handler from setup_logging invalidate creds?
         handlers = logging.root.handlers.copy()
         fmt = getattr(handlers[0], 'formatter', None) if len(handlers) else DEFAULT_FORMAT
-        low_handler, high_handler, *handlers = cls.split_std_handlers(low_level, high_level, handlers)
+        low_handler, high_handler, *handlers = cls.split_std_handlers(level, high_level, handlers)
         low_handler.setFormatter(fmt)
         low_filter = low_handler.filters[0]
         low_filter.allow(cls.APP_LOGGER_NAME)
@@ -1185,6 +1185,7 @@ class CloudLog(logging.Logger):
         return {
             'CloudLog': CloudLog,
             'LowPassFilter': LowPassFilter,
+            'GoogleClient': GoogleClient,
             'StreamClient': StreamClient,
             'StreamTransport': StreamTransport,
             'test_loggers': test_loggers,
