@@ -623,13 +623,9 @@ class CloudLog(logging.Logger):
             app_handler_name = name_dict[cls.APP_LOGGER_NAME]
             app_handler = cls.make_handler(app_handler_name, high_level, resource, log_client)
             app.logger.addHandler(app_handler)
-            if not extra_loggers and log_names:
-                cl_kwargs = {'level': level, 'automate': True, 'resource': resource, 'client': log_client}
-                for name in log_names:
-                    cur_logger = CloudLog(name, handler_name=name_dict[name], **cl_kwargs)
-                    cur_logger.propagate = isinstance(log_client, GoogleClient)
-                    extra_loggers.append(cur_logger)
             cls.add_report_log(extra_loggers, high_level)
+            if not extra_loggers:
+                log_names, extra_loggers = cls.make_extra_loggers(names, level, log_client, resource)
         if _test_log:
             name = 'c_log'
             c_client = StreamClient(name, resource, labels)
@@ -646,7 +642,19 @@ class CloudLog(logging.Logger):
         logging.debug("***************************** END post app instantiating setup *****************************")
 
     @classmethod
-    def alt_setup_logging(cls, app, log_client, level, high_level, resource, name_dict):
+    def make_extra_loggers(cls, names, level, client, resource, **kwargs):
+        """Input names dict, plus logger parameters. Returns a logger & log names lists (excludes app.logger). """
+        kwargs.update({'automate': True, 'client': client, 'resource': resource, 'level': level})
+        log_names = [name for name in names if name != cls.APP_LOGGER_NAME]
+        loggers = []
+        for name in log_names:
+            cur_logger = CloudLog(name, handler_name=names[name], **kwargs)
+            cur_logger.propagate = isinstance(client, GoogleClient)
+            loggers.append(cur_logger)
+        return log_names, loggers
+
+    @classmethod
+    def alt_setup_logging(cls, app, log_client, level, high_level, resource, names):
         """Used for standard environment, but not using .basicConfig for pre-setup. """
         app_handler_name = name_dict[cls.APP_LOGGER_NAME]
         report_names = set(name_dict.keys()).union(name_dict.values())
@@ -666,6 +674,8 @@ class CloudLog(logging.Logger):
             if not all(ea in names_root_handlers for ea in needed_root_handler_names):
                 root_handlers = cls.split_std_handlers(level, high_level, root_handlers)
                 logging.root.handlers = root_handlers
+        log_names, loggers = cls.make_extra_loggers(names, level, log_client, resource)
+        return (log_names, *loggers)
 
     @classmethod
     def non_standard_logging(cls, cred_path, low_level, high_level, resource, names={}):
@@ -696,9 +706,8 @@ class CloudLog(logging.Logger):
         app_handler_name = names.get(cls.APP_LOGGER_NAME, cls.APP_HANDLER_NAME)
         handler = cls.make_handler(app_handler_name, high_level, resource, log_client, fmt=fmt)
         logging.root.addHandler(handler)
-        kwargs = dict(level=low_level, automate=True, log_client=log_client, resource=resource, fmt=fmt)
-        loggers = [CloudLog(name, handler_name=names[name], **kwargs) for name in names if name != cls.APP_LOGGER_NAME]
-        return (log_client, *loggers)
+        log_names, loggers = cls.make_extra_loggers(names, level, log_client, resource, fmt=fmt)
+        return (log_names, *loggers)
 
     @classmethod
     def process_names(cls, log_names, _names={}):
