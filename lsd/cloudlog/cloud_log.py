@@ -710,10 +710,10 @@ class CloudLog(logging.Logger):
         return (log_names, *loggers)
 
     @classmethod
-    def process_names(cls, log_names, _names={}):
+    def process_names(cls, log_names, _names=None):
         """Returns a dict of logger: handler names. Always contains app logger name and app handler name.
         Input:
-            log_names: Can be a str, None, list of str, or list of 2-tuple name str, or a dict.
+            log_names: Can be a list of str, a list of 2-tuple name str pairs, a str, a dict of name str pairs, or None.
             _names: Optional dict in the same form as output. Serve as default values if not overridden from log_names.
         Output:
             A dict with logger names as keys, and handler names as values (often identical). Always includes main app.
@@ -736,9 +736,10 @@ class CloudLog(logging.Logger):
             name = cls.normalize_logger_name(name)
             handler_name = cls.normalize_handler_name(handler_name or name)
             rv[name] = handler_name
-        if _names:
-            if log_names and log_names not in (_names, list(_names.keys())):
-                rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
+        _names = _names or {}
+        if not isinstance(_names, dict):
+            raise TypeError(f"The '_names' parameter must be falsy or a dict for process_names. Failed: {_names} ")
+        rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
         return rv
 
     @classmethod
