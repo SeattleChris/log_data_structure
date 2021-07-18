@@ -743,19 +743,18 @@ class CloudLog(logging.Logger):
         return rv
 
     @classmethod
-    def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
-        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
-        low_name = low_name or cls.SPLIT_LOW_NAME
-        high_name = high_name or cls.SPLIT_HIGH_NAME
-        if not high_level and isinstance(name_or_loggers, (cls, logging.Logger)):
-            high_level = getattr(name_or_loggers, 'high_level', None)
+    def add_report_log(cls, names_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
+        """Any level record with a name from names_or_loggers is only streamed to stdout when sent to root handlers. """
+        if isinstance(names_or_loggers, (str, logging.Logger)):
+            names_or_loggers = [names_or_loggers]
+        if high_level is None:
+            levels = set(getattr(ea, 'high_level', 0) for ea in names_or_loggers if isinstance(ea, logging.Logger))
+            high_level = max(levels) if levels else None
         stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
         ignore_filter = cls.get_apply_ignore_filter(high_name)
         success = False
-        names = stdout_filter.allow(name_or_loggers)
-        if isinstance(names, str):
-            names = [names]
-        if isinstance(names, list):
+        names = stdout_filter.allow(names_or_loggers)
+        if isinstance(names, list):  # allways returns list if given a list.
             success = [ignore_filter.add(name) for name in names]
             success = all(bool(ea) for ea in success) and len(success) > 0
         else:
