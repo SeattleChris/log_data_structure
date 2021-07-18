@@ -715,9 +715,11 @@ class CloudLog(logging.Logger):
         Input:
             log_names: Can be a list of str, a list of 2-tuple name str pairs, a str, a dict of name str pairs, or None.
             _names: Optional dict in the same form as output. Serve as default values if not overridden from log_names.
+                If _names has cls.APP_LOGGER_NAME as a key, then its value will be used to override value in return.
         Output:
             A dict with logger names as keys, and handler names as values (often identical). Always includes main app.
         """
+        _names = _names or {}
         if isinstance(log_names, str):
             log_names = [log_names] if log_names not in (cls.APP_LOGGER_NAME, '') else []
         if not log_names:
@@ -726,7 +728,8 @@ class CloudLog(logging.Logger):
             log_names = [(key, val) for key, val in log_names.items()]
         elif not isinstance(log_names, list):
             raise TypeError(f"Expected a list (or dict or str or None). Bad input: {log_names} ")
-        rv = {cls.APP_LOGGER_NAME: cls.normalize_handler_name(cls.APP_LOGGER_NAME)}
+        app_handler_name = _names.get(cls.APP_LOGGER_NAME, cls.normalize_handler_name(cls.APP_LOGGER_NAME))
+        rv = {cls.APP_LOGGER_NAME: app_handler_name or cls.APP_HANDLER_NAME}
         for name in log_names:
             handler_name = None
             if isinstance(name, tuple):
