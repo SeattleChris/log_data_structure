@@ -755,8 +755,8 @@ class CloudLog(logging.Logger):
         success = False
         names = stdout_filter.allow(names_or_loggers)
         if isinstance(names, list):  # allways returns list if given a list.
-            success = [ignore_filter.add(name) for name in names]
-            success = all(bool(ea) for ea in success) and len(success) > 0
+            success = [ignore_filter.add(name) for name in names] or [False]
+            success = all(success)
         else:
             raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
         return success
