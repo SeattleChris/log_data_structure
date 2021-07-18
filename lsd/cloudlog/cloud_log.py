@@ -525,8 +525,7 @@ class CloudLog(logging.Logger):
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = config_dict(config, add_config)
-        config.update(config_overrides)
+        config = config_dict(config, add_config, config_overrides)
         cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
         testing = kwargs.pop('testing', config.get('TESTING', None))

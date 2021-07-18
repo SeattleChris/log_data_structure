@@ -3,24 +3,26 @@ from os import environ
 from google.cloud.logging import handlers, Client as GoogleClient
 
 
-def config_dict(config, add_to_dict=None):
+def config_dict(config, add_to_dict=None, overrides=None):
     """Returns a dict or dict like object (os.environ) with optional updated values.
     Input:
-        config: Can be a dict, or None to use os.environ, otherwise uses config.__dict__.
-        add_to_dict: Either a dict, or a list/tuple of config class attributes to create a dict.
+        config: Can be a dict, or None (to use os.environ), otherwise uses config.__dict__.
+        add_to_dict: An iterable of possible config class attributes to include despite not already in __dict__.
+        overrides: A dict of key-values to add to the return value, overriding any existing values.
     Modifies:
-        if add_to_dict is given, it may modify the input config dict or os.environ.
+        If config is a dict or becomes os.environ it may get modified if a overrides is given.
     Output:
-        A dict, or os.environ (which has dict like methods), updated with values due to optional add_to_dict input.
+        A dict, or os.environ (which has dict like methods), updated with key-values according to given parameters.
     """
-    if add_to_dict and not isinstance(add_to_dict, dict):  # must be an iterable of config object attributes.
-        add_to_dict = {getattr(config, key, None) for key in add_to_dict}
     if config and not isinstance(config, dict):
-        config = getattr(config, '__dict__', None)
-    if not config:
-        config = environ
-    if add_to_dict:
-        config.update(add_to_dict)
+        try:
+            config = getattr(config, '__dict__', None)
+        except Exception as e:
+            print(e)
+            config = environ
+    add_to_dict = {key: getattr(config, key, None) for key in add_to_dict} if add_to_dict else {}
+    overrides = overrides or {}
+    config.update(add_to_dict, **overrides)
     return config
 
 
