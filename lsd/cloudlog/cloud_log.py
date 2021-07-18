@@ -747,10 +747,22 @@ class CloudLog(logging.Logger):
         """Any level record with a name from names_or_loggers is only streamed to stdout when sent to root handlers. """
         if isinstance(names_or_loggers, (str, logging.Logger)):
             names_or_loggers = [names_or_loggers]
-        if high_level is None:
-            levels = set(getattr(ea, 'high_level', 0) for ea in names_or_loggers if isinstance(ea, logging.Logger))
-            high_level = max(levels) if levels else None
-        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
+        if not high_level and check_global:  # 0 is also not valid for high_level.
+            high_level = getattr(logging.root, '_config_high_level', None)
+        if not high_level:
+            levels = []
+            for ea in names_or_loggers:
+                if isinstance(ea, str):
+                    continue
+                cur_high = getattr(ea, 'high_level', 0)
+                if not cur_high:
+                    cur_levels = (getattr(handle, 'level', 0) or 0 for handle in getattr(ea, 'handlers', []))
+                    cur_levels = [ea for ea in cur_levels if ea] + [getattr(ea, 'level', 0)]
+                    cur_high = max(cur_levels)
+                levels.append(cur_high)
+            # levels = set(getattr(a, 'high_level', a.level) for a in names_or_loggers if isinstance(a, logging.Logger))
+            high_level = min(levels) if levels else None
+        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name)  # check_global is completed, so not passed.
         ignore_filter = cls.get_apply_ignore_filter(high_name)
         success = False
         names = stdout_filter.allow(names_or_loggers)
