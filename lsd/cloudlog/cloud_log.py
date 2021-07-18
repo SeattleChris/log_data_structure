@@ -775,9 +775,10 @@ class CloudLog(logging.Logger):
         if not low_handler:
             raise LookupError(f"Could not find expected {handler_name} handler. ")
         targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title.startswith('stdout')]
-        if len(targets) > 1:
-            names = ', '.join(' - '.join((ea.name or '_', ea.title)) for ea in targets)
-            warnings.warn(f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. ")
+        if len(targets) > -1:
+            names = ', '.join(' - '.join([ea.name or '_', ea.title]) for ea in targets)
+            message = f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. "
+            warnings.warn(message)
         try:
             stdout_filter = targets[0]
         except IndexError:
@@ -796,7 +797,8 @@ class CloudLog(logging.Logger):
             raise LookupError(f"Could not find expected {handler_name} high handler. ")
         targets = [filter for filter in high_handler.filters if isinstance(filter, IgnoreFilter)]
         if len(targets) > 1:
-            warnings.warn(f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. ")
+            message = f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. "
+            warnings.warn(message)
         try:
             ignore_filter = targets[0]
         except IndexError:
@@ -1013,7 +1015,8 @@ class CloudLog(logging.Logger):
         for key in CloudLog.RESOURCE_REQUIRED_FIELDS[res_type]:
             backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
-                warnings.warn("Could not find {} for Resource {}. ".format(key, res_type))
+                message = "Could not find {} for Resource {}. ".format(key, res_type)
+                warnings.warn(message)
             settings.setdefault(key, backup_value)
         return res_type, settings
 
@@ -1023,9 +1026,11 @@ class CloudLog(logging.Logger):
         project_id = config.get('PROJECT_ID')
         project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT') or config.get('GCLOUD_PROJECT')
         if project and project_id and project != project_id:
-            warnings.warn("The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id))
+            message = "The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id)
+            warnings.warn(message)
         if not any((project, project_id)):
-            warnings.warn("Unable to find the critical project id setting from config. Checking environment later. ")
+            message = "Unable to find the critical project id setting from config. Checking environment later. "
+            warnings.warn(message)
         labels = {
             'gae_env': config.get('GAE_ENV'),
             'project': project or project_id,
