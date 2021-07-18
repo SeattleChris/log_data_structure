@@ -506,21 +506,22 @@ class CloudLog(logging.Logger):
     def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
-            config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
-            add_config is a list of attributes on the config object, or a dict, to update config_as_dict response.
-            config_overrides is a dictionary of values that will overridden for the Flask app configuration.
+            config: Can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
+            add_config: None, or a list of attributes on the config object not already included in its __dict__.
+            config_overrides: None or a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
-            If not set, the defaults for those in the list will be determined by:
-            handlers: initialized as an empty list. Allows for adding other handlers to the root logger.
-            debug, testing: from config.
-            level, high_level, log_names, res_type: from CloudLog class attributes.
-            resource, labels: constructed from config/environ and kwarg values (along with res_type).
+            If not set in kwargs, the defaults for those in the list will be determined by:
+                handlers: initialized as an empty list. Allows for adding other handlers to the root logger.
+                debug, testing: from config.
+                level, high_level, log_names, res_type: from CloudLog class attributes.
+                resource, labels: constructed from config and/or environ and kwarg values (along with res_type).
         Modifies:
             CloudLog is set as the LoggerClass for logging.
             logging.root initialized with level.
             If level < high_level (default): logging.root has high & low handlers that are set with log_names overrides.
             logging.root is given some attributes with a structure of _config_*. These are also included in the return.
+            If config is a dict or becomes os.environ (given None) it may get modified if config_overrides is given.
         Returns:
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
