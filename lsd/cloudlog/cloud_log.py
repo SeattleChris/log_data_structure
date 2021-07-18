@@ -503,12 +503,12 @@ class CloudLog(logging.Logger):
             self.propagate = False
 
     @classmethod
-    def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
+    def basicConfig(cls, config=None, overrides={}, add_config=None, log_names=[], **kwargs):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
             config: Can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
             add_config: None, or a list of attributes on the config object not already included in its __dict__.
-            config_overrides: None or a dictionary of values that will overridden for the Flask app configuration.
+            overrides: None or a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
             If not set in kwargs, the defaults for those in the list will be determined by:
@@ -521,12 +521,12 @@ class CloudLog(logging.Logger):
             logging.root initialized with level.
             If level < high_level (default): logging.root has high & low handlers that are set with log_names overrides.
             logging.root is given some attributes with a structure of _config_*. These are also included in the return.
-            If config is a dict or becomes os.environ (given None) it may get modified if config_overrides is given.
+            If config is a dict or becomes os.environ (given None) it may get modified if overrides is given.
         Returns:
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = config_dict(config, add_config, config_overrides)
+        config = config_dict(config, add_config, overrides)
         cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
         testing = kwargs.pop('testing', config.get('TESTING', None))
@@ -536,7 +536,6 @@ class CloudLog(logging.Logger):
         level = cls.normalize_level(kwargs.pop('level', None), level)
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
         root_handlers = cls.split_std_handlers(level, high_level, kwargs.pop('handlers', []))
-        log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
@@ -629,7 +628,7 @@ class CloudLog(logging.Logger):
                 log_names, extra_loggers = cls.make_extra_loggers(names, level, log_client, resource)
         if _test_log:
             name = 'c_log'
-            c_client = StreamClient(name, resource, labels)
+            c_client = StreamClient(name, resource, labels)  # TODO: HERE
             c_log = CloudLog(name, level, automate=True, resource=resource, client=c_client)
             # c_log is now set for: stderr out, propagate=False
             c_log.propagate = True
@@ -739,7 +738,6 @@ class CloudLog(logging.Logger):
             name = cls.normalize_logger_name(name)
             handler_name = cls.normalize_handler_name(handler_name or name)
             rv[name] = handler_name
-        _names = _names or {}
         if not isinstance(_names, dict):
             raise TypeError(f"The '_names' parameter must be falsy or a dict for process_names. Failed: {_names} ")
         rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
@@ -990,6 +988,7 @@ class CloudLog(logging.Logger):
             add_client_kwargs['project'] = kwargs['project']
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         client_kwargs.update(add_client_kwargs)
+
         if cred_or_path is None and check_global:
             cred_or_path = getattr(logging.root, '._config_log_client', None)
         if isinstance(cred_or_path, (GoogleClient, StreamClient)):
@@ -1010,7 +1009,7 @@ class CloudLog(logging.Logger):
             assert isinstance(log_client, BaseClientGoogle)
         except Exception as e:
             logging.exception(e)
-            log_client = StreamClient(**kwargs, **client_kwargs)
+            log_client = StreamClient(**kwargs, **client_kwargs)  # TODO: HERE
         return log_client
 
     @staticmethod
