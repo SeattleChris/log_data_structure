@@ -16,7 +16,7 @@ def config_dict(config, add_to_dict=None, overrides=None):
     """
     if config and not isinstance(config, dict):
         try:
-            config = getattr(config, '__dict__', None)
+            config = vars(config)
         except Exception as e:
             print(e)
             config = environ
@@ -137,9 +137,9 @@ def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'i
         found_handler_str += f"{name}:{desc}{', '.join([str(ea) for ea in handlers])} " + '\n'
         if adapter:
             print(f"-------------------------- {name} ADAPTER Settings --------------------------")
-            pprint(adapter.__dict__)
+            pprint(vars(adapter))
         print(f"---------------------------- {name} Logger {repr(logger)} ----------------------------")
-        pprint(logger.__dict__)
+        pprint(vars(logger))
         print(f'------------------------- Logger Calls: {name} -------------------------')
         for level in levels:
             if hasattr(adapter or logger, level):
@@ -152,7 +152,7 @@ def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'i
     all_handlers = [ea for ea in all_handlers if ea and ea != 'not found']
     for num, handle in enumerate(all_handlers):
         print(f"--------------------- {num}: {getattr(handle, 'name', None) or repr(handle)} ---------------------")
-        pprint(handle.__dict__)
+        pprint(vars(handle))
         temp_client = getattr(handle, 'client', object)
         if isinstance(temp_client, (GoogleClient, StreamClient)):
             found_clients.append(temp_client)
@@ -187,7 +187,7 @@ def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'i
         print(f"{name}: {creds} ")
         print(creds.expired)
         print(creds.valid)
-        pprint(creds.__dict__)
+        pprint(vars(creds))
         print("--------------------------------------------------")
     if not creds_list:
         print("No credentials found to report.")
@@ -213,7 +213,7 @@ def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'i
     for c in found_client:
         print(repr(c))
         print(f"Count: {count[c]} ")
-        pprint(c.__dict__)
+        pprint(vars(c))
         print("--------------------------------------------------")
 
 
