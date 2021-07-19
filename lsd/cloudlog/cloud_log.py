@@ -127,7 +127,7 @@ class ClientResourcePropertiesMixIn:
     @labels.setter
     def labels(self, labels):
         if not isinstance(labels, dict):
-            raise TypeError("Expected a dict input for labels. ")
+            raise TypeError(f"Expected a dict input for labels. Failed: {labels} ")
         res_labels = getattr(self.resource, 'labels', {})
         current_res_label_values = {key: val for key, val in self._labels.items() if key in res_labels}
         self._labels = {**current_res_label_values, **labels}
@@ -231,7 +231,7 @@ class StreamClient(ClientResourcePropertiesMixIn):
         base_kwargs = self.base_kwargs_from_init(resource, labels, handler, **kwargs)
         for key, val in base_kwargs.items():
             setattr(self, key, val)  # This may include project.
-        super().__init__(self, resource, labels, handler, **kwargs)
+        super().__init__(resource, labels, handler, **kwargs)
 
     def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
         base_kwargs = super().base_kwargs_from_init(resource, labels, handler, **kwargs)
@@ -431,7 +431,7 @@ class CloudLog(logging.Logger):
         'reported_errors': ['project_id'],
         }
     RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
-    CLIENT_KW = ('project', 'handler_name', 'handler', 'credentials', 'client_info', 'client_options')
+    CLIENT_KW = ('project', 'handler', 'credentials', 'client_info', 'client_options')
     # also: '_http', '_use_grpc'
 
     def __init__(self, name=None, level=logging.NOTSET, automate=False, replace=False, **kwargs):
@@ -628,7 +628,7 @@ class CloudLog(logging.Logger):
                 log_names, extra_loggers = cls.make_extra_loggers(names, level, log_client, resource)
         if _test_log:
             name = 'c_log'
-            c_client = StreamClient(name, resource, labels)  # TODO: HERE
+            c_client = StreamClient(resource, labels, name)
             c_log = CloudLog(name, level, automate=True, resource=resource, client=c_client)
             # c_log is now set for: stderr out, propagate=False
             c_log.propagate = True
@@ -788,7 +788,7 @@ class CloudLog(logging.Logger):
         if not low_handler:
             raise LookupError(f"Could not find expected {handler_name} handler. ")
         targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title.startswith('stdout')]
-        if len(targets) > -1:
+        if len(targets) > 1:
             names = ', '.join(' - '.join([ea.name or '_', ea.title]) for ea in targets)
             message = f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. "
             warnings.warn(message)
@@ -992,8 +992,7 @@ class CloudLog(logging.Logger):
         if cred_or_path is None and check_global:
             cred_or_path = getattr(logging.root, '._config_log_client', None)
         if isinstance(cred_or_path, (GoogleClient, StreamClient)):
-            client = cred_or_path
-
+            client = cred_or_path  # TODO: ? Update client based on client_kwargs or other kwargs?
             return client
 
         if isinstance(cred_or_path, service_account.Credentials):
@@ -1008,8 +1007,9 @@ class CloudLog(logging.Logger):
             log_client = GoogleClient(**client_kwargs)
             assert isinstance(log_client, BaseClientGoogle)
         except Exception as e:
-            logging.exception(e)
-            log_client = StreamClient(**kwargs, **client_kwargs)  # TODO: HERE
+            print(e)
+            client_kwargs = {**kwargs, **client_kwargs}
+            log_client = StreamClient(**client_kwargs)
         return log_client
 
     @staticmethod
@@ -1030,7 +1030,7 @@ class CloudLog(logging.Logger):
             backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
                 message = "Could not find {} for Resource {}. ".format(key, res_type)
-                warnings.warn(message)
+                warnings.warn(message, stacklevel=3)
             settings.setdefault(key, backup_value)
         return res_type, settings
 
@@ -1041,10 +1041,10 @@ class CloudLog(logging.Logger):
         project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT') or config.get('GCLOUD_PROJECT')
         if project and project_id and project != project_id:
             message = "The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id)
-            warnings.warn(message)
+            warnings.warn(message, stacklevel=3)
         if not any((project, project_id)):
             message = "Unable to find the critical project id setting from config. Checking environment later. "
-            warnings.warn(message)
+            warnings.warn(message, stacklevel=3)
         labels = {
             'gae_env': config.get('GAE_ENV'),
             'project': project or project_id,

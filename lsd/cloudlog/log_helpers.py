@@ -1,6 +1,9 @@
 import logging
+import warnings
 from os import environ
 from google.cloud.logging import handlers, Client as GoogleClient
+
+OLD_SHOWWARNINGS = warnings.showwarning
 
 
 def config_dict(config, add_to_dict=None, overrides=None):
@@ -70,6 +73,37 @@ def standard_env(config=environ):
     if code_environment in expected:
         return True
     return False
+
+
+# class DebugWarning(warnings.UserWarning):
+#     """Non-blocking warning sent to stdout. Useful for debugging. """
+#     warnings.showwarning()
+#     pass
+
+
+def send_warnings_to_print(message, category, filename, lineno, file=None, *args):
+    """Will be sent to stdout, formatted similar to LogRecords. """
+    location = filename.split('/')[-1].rstrip('.py') if isinstance(filename, str) else 'UNKNOWN'
+    bonus_string = ''
+    if file:
+        bonus_string += f"file: {file} "
+    if args and args[0] is not None:
+        bonus_string += f"args: {args} "
+    string = '%s:%s: %s:%s' % (location, lineno, category.__name__, message) + bonus_string
+    print(string)
+    return
+
+
+def setup_warnings_log(goal=None):
+    """Toggle the warnings using default or send_warnings_to_log for warnings.showwarning. """
+    current = 'log' if warnings.showwarning == send_warnings_to_print else 'old'
+    if goal is None:
+        goal = 'old' if current == 'log' else 'log'
+    if goal == 'old' and current != 'old':
+        warnings.showwarning = OLD_SHOWWARNINGS
+    elif goal == 'log' and current != 'log':
+        warnings.showwarning = send_warnings_to_print
+    # else it is already set correctly.
 
 
 def test_loggers(app, logger_names=list(), loggers=list(), levels=('warning', 'info', 'debug'), context=''):

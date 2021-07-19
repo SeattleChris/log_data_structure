@@ -1,8 +1,10 @@
 from flask import Flask
 from .cloudlog import CloudLog
+from .cloudlog import setup_warnings_log
 
 
 def create_app(config, config_overrides=dict()):
+    setup_warnings_log('log')
     log_names = [__name__, 'alert', ] or None  # 'c_log'
     add_config_dict = [] or {} or None
     log_setup = CloudLog.basicConfig(config, config_overrides, add_config_dict, log_names=log_names)
