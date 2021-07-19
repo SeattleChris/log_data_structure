@@ -141,8 +141,6 @@ class ClientResourcePropertiesMixIn:
         expected_attr = ('resource', 'labels')
         if handler and not all(hasattr(handler, ea) for ea in expected_attr):
             handler = self.prepare_handler(handler)
-        # elif not handler:
-        #     raise KeyError(f"Unable to find '{self.handler_name}' handler. ")
         return handler
 
     def get_handler_name(self, handler):
@@ -229,16 +227,12 @@ class StreamClient(ClientResourcePropertiesMixIn):
 
     def __init__(self, resource=None, labels=None, handler='', **kwargs):
         base_kwargs = self.base_kwargs_from_init(resource, labels, handler, **kwargs)
+        for key in ('credentials', 'client_info', 'client_options'):
+            base_kwargs['_' + key] = base_kwargs.pop(key, None)  # ? mimics normal Client?
+        base_kwargs['_http_internal'] = base_kwargs.pop('_http', None)  # mimics normal Client.
         for key, val in base_kwargs.items():
             setattr(self, key, val)  # This may include project.
         super().__init__(resource, labels, handler, **kwargs)
-
-    def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
-        base_kwargs = super().base_kwargs_from_init(resource, labels, handler, **kwargs)
-        for key in ('credentials', 'client_info', 'client_options'):
-            base_kwargs['_' + key] = base_kwargs.pop(key, None)
-        base_kwargs['_http_internal'] = base_kwargs.pop('_http', None)
-        return base_kwargs
 
     def create_handler(self, handler_param):
         """Creates or updates a logging.Handler with the correct name and attaches the labels and resource. """
