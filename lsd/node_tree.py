@@ -2,7 +2,7 @@
 import logging
 # import google.cloud.logging as cloud_logging
 from google.cloud import logging as cloud_logging
-from .cloudlog import LowPassFilter
+from cloudlog import LowPassFilter
 # from pprint import pprint
 from datetime import datetime as dt
 

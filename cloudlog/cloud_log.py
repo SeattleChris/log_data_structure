@@ -382,7 +382,8 @@ class CloudParamHandler(CloudLoggingHandler):
 
 class CloudLog(logging.Logger):
     """Extended python Logger class that attaches a google cloud log handler. """
-    APP_LOGGER_NAME = __package__.split('.')[0]  # TODO: Update if this logging package is imported into an application.
+    # APP_LOGGER_NAME = __package__.split('.')[0]  # TODO: Update if this logging package is imported into an application.
+    APP_LOGGER_NAME = 'lsd'
     APP_HANDLER_NAME = 'app'
     DEFAULT_LOGGER_NAME = None
     DEFAULT_HANDLER_NAME = None
