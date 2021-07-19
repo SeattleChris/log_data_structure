@@ -16,6 +16,8 @@ class Config:
     FLASK_APP = environ.get('FLASK_APP')
     FLASK_ENV = environ.get('FLASK_ENV', 'production')
     # DEV_RUN = True if environ.get('DEV_RUN') == 'True' else False
+    TESTING = environ.get('TESTING', False)
+    DEBUG = environ.get('DEBUG')
     # DEBUG = any([DEV_RUN, environ.get('DEBUG') == 'True', GAE_SERVICE == 'dev'])
     DEBUG = any([environ.get('DEBUG') == 'True', GAE_SERVICE == 'dev'])
     EXPLAIN_TEMPLATE_LOADING = False  # Creates info log with verbose template loading process. default is False.
@@ -45,7 +47,7 @@ class Config:
     COLLECT_SERVICE = environ.get('COLLECT_SERVICE', CURRENT_SERVICE)
     CAPTURE_QUEUE = environ.get('CAPTURE_QUEUE')
     COLLECT_QUEUE = environ.get('COLLECT_QUEUE')
-    _add_to_dict = ('DEBUG', 'GAE_ENV', 'GAE_SERVICE', 'GAE_VERSION', 'PROJECT_ZONE',
+    _add_to_dict = ('GAE_ENV', 'GAE_SERVICE', 'GAE_VERSION', 'PROJECT_ZONE', 'TESTING',  # 'DEBUG',
                     'GAE_FLEX_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'PROJECT', 'PROJECT_ID',
                     )
     _not_in_dict = ('SECRET_KEY', 'FLASK_APP', 'FLASK_ENV', 'GAE_INSTANCE', 'PROJECT_REGION',
@@ -57,6 +59,7 @@ class Config:
 
     def __init__(self) -> None:
         self.LOCAL_ENV = self.get_LOCAL_ENV()
+        self.DEBUG = self.get_DEBUG()
         self.CODE_SERVICE = self.get_CODE_SERVICE()
         self.URL = self.get_URL()
         self.SQLALCHEMY_DATABASE_URI = self.get_SQLALCHEMY_DATABASE_URI()
@@ -92,6 +95,11 @@ class Config:
         if self.GAE_INSTANCE:
             return False
         return True
+
+    def get_DEBUG(self):
+        """Computes what conditions should always be debug mode."""
+        debug = any([self.DEBUG, self.LOCAL_ENV, self.GAE_SERVICE == 'dev'])
+        return debug
 
     def get_CODE_SERVICE(self):
         """Returns a str representing the environment the app is running on. """

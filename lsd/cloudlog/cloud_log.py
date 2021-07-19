@@ -127,7 +127,7 @@ class ClientResourcePropertiesMixIn:
     @labels.setter
     def labels(self, labels):
         if not isinstance(labels, dict):
-            raise TypeError("Expected a dict input for labels. ")
+            raise TypeError(f"Expected a dict input for labels. Failed: {labels} ")
         res_labels = getattr(self.resource, 'labels', {})
         current_res_label_values = {key: val for key, val in self._labels.items() if key in res_labels}
         self._labels = {**current_res_label_values, **labels}
@@ -231,7 +231,7 @@ class StreamClient(ClientResourcePropertiesMixIn):
         base_kwargs = self.base_kwargs_from_init(resource, labels, handler, **kwargs)
         for key, val in base_kwargs.items():
             setattr(self, key, val)  # This may include project.
-        super().__init__(self, resource, labels, handler, **kwargs)
+        super().__init__(resource, labels, handler, **kwargs)
 
     def base_kwargs_from_init(self, resource, labels, handler, **kwargs):
         base_kwargs = super().base_kwargs_from_init(resource, labels, handler, **kwargs)
@@ -431,7 +431,7 @@ class CloudLog(logging.Logger):
         'reported_errors': ['project_id'],
         }
     RESERVED_KWARGS = ('stream', 'fmt', 'format', 'handler_name', 'handler_level', 'res_type', 'parent', 'cred_or_path')
-    CLIENT_KW = ('project', 'handler_name', 'handler', 'credentials', 'client_info', 'client_options')
+    CLIENT_KW = ('project', 'handler', 'credentials', 'client_info', 'client_options')
     # also: '_http', '_use_grpc'
 
     def __init__(self, name=None, level=logging.NOTSET, automate=False, replace=False, **kwargs):
@@ -503,30 +503,30 @@ class CloudLog(logging.Logger):
             self.propagate = False
 
     @classmethod
-    def basicConfig(cls, config=None, config_overrides={}, add_config=None, **kwargs):
+    def basicConfig(cls, config=None, overrides={}, add_config=None, log_names=[], **kwargs):
         """Must be called before flask app is created and before logging.basicConfig (triggered by any logging).
         Input:
-            config can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
-            add_config is a list of attributes on the config object, or a dict, to update config_as_dict response.
-            config_overrides is a dictionary of values that will overridden for the Flask app configuration.
+            config: Can be an object, dictionary or None (environ as backup). If an object, will use it's __dict__ value.
+            add_config: None, or a list of attributes on the config object not already included in its __dict__.
+            overrides: None or a dictionary of values that will overridden for the Flask app configuration.
             List of kwarg overrides: debug, testing, level, high_level, handlers, log_names, res_type, resource, labels.
             All other kwargs will be used for labels and sent to logging.basicConfig.
-            If not set, the defaults for those in the list will be determined by:
-            handlers: initialized as an empty list. Allows for adding other handlers to the root logger.
-            debug, testing: from config.
-            level, high_level, log_names, res_type: from CloudLog class attributes.
-            resource, labels: constructed from config/environ and kwarg values (along with res_type).
+            If not set in kwargs, the defaults for those in the list will be determined by:
+                handlers: initialized as an empty list. Allows for adding other handlers to the root logger.
+                debug, testing: from config.
+                level, high_level, log_names, res_type: from CloudLog class attributes.
+                resource, labels: constructed from config and/or environ and kwarg values (along with res_type).
         Modifies:
             CloudLog is set as the LoggerClass for logging.
             logging.root initialized with level.
             If level < high_level (default): logging.root has high & low handlers that are set with log_names overrides.
             logging.root is given some attributes with a structure of _config_*. These are also included in the return.
+            If config is a dict or becomes os.environ (given None) it may get modified if overrides is given.
         Returns:
             dict of settings and objects used to configure loggers after Flask app is initiated.
         """
         logging.setLoggerClass(cls)  # Causes app.logger to be a CloudLog instance.
-        config = config_dict(config, add_config)
-        config.update(config_overrides)
+        config = config_dict(config, add_config, overrides)
         cred = config.get('GOOGLE_APPLICATION_CREDENTIALS', None)
         debug = kwargs.pop('debug', config.get('DEBUG', None))
         testing = kwargs.pop('testing', config.get('TESTING', None))
@@ -536,7 +536,6 @@ class CloudLog(logging.Logger):
         level = cls.normalize_level(kwargs.pop('level', None), level)
         high_level = cls.normalize_level(kwargs.pop('high_level', None), cls.DEFAULT_HIGH_LEVEL)
         root_handlers = cls.split_std_handlers(level, high_level, kwargs.pop('handlers', []))
-        log_names = kwargs.pop('log_names', [cls.APP_LOGGER_NAME])
         resource, labels, kwargs = cls.prepare_res_label(check_global=False, config=config, **kwargs)
         client = cls.make_client(cred, res_label=False, check_global=False, resource=resource, labels=labels, **kwargs)
         kwargs['handlers'] = root_handlers
@@ -629,7 +628,7 @@ class CloudLog(logging.Logger):
                 log_names, extra_loggers = cls.make_extra_loggers(names, level, log_client, resource)
         if _test_log:
             name = 'c_log'
-            c_client = StreamClient(name, resource, labels)
+            c_client = StreamClient(resource, labels, name)
             c_log = CloudLog(name, level, automate=True, resource=resource, client=c_client)
             # c_log is now set for: stderr out, propagate=False
             c_log.propagate = True
@@ -710,14 +709,16 @@ class CloudLog(logging.Logger):
         return (log_names, *loggers)
 
     @classmethod
-    def process_names(cls, log_names, _names={}):
+    def process_names(cls, log_names, _names=None):
         """Returns a dict of logger: handler names. Always contains app logger name and app handler name.
         Input:
-            log_names: Can be a str, None, list of str, or list of 2-tuple name str, or a dict.
+            log_names: Can be a list of str, a list of 2-tuple name str pairs, a str, a dict of name str pairs, or None.
             _names: Optional dict in the same form as output. Serve as default values if not overridden from log_names.
+                If _names has cls.APP_LOGGER_NAME as a key, then its value will be used to override value in return.
         Output:
             A dict with logger names as keys, and handler names as values (often identical). Always includes main app.
         """
+        _names = _names or {}
         if isinstance(log_names, str):
             log_names = [log_names] if log_names not in (cls.APP_LOGGER_NAME, '') else []
         if not log_names:
@@ -726,7 +727,8 @@ class CloudLog(logging.Logger):
             log_names = [(key, val) for key, val in log_names.items()]
         elif not isinstance(log_names, list):
             raise TypeError(f"Expected a list (or dict or str or None). Bad input: {log_names} ")
-        rv = {cls.APP_LOGGER_NAME: cls.normalize_handler_name(cls.APP_LOGGER_NAME)}
+        app_handler_name = _names.get(cls.APP_LOGGER_NAME, cls.normalize_handler_name(cls.APP_LOGGER_NAME))
+        rv = {cls.APP_LOGGER_NAME: app_handler_name or cls.APP_HANDLER_NAME}
         for name in log_names:
             handler_name = None
             if isinstance(name, tuple):
@@ -736,27 +738,38 @@ class CloudLog(logging.Logger):
             name = cls.normalize_logger_name(name)
             handler_name = cls.normalize_handler_name(handler_name or name)
             rv[name] = handler_name
-        if _names:
-            if log_names and log_names not in (_names, list(_names.keys())):
-                rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
+        if not isinstance(_names, dict):
+            raise TypeError(f"The '_names' parameter must be falsy or a dict for process_names. Failed: {_names} ")
+        rv = {**_names, **rv}  # report_names = set(rv.keys()).union(rv.values())
         return rv
 
     @classmethod
-    def add_report_log(cls, name_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
-        """Any level log records with this name will be sent to stdout instead of stderr when sent to root handlers. """
-        low_name = low_name or cls.SPLIT_LOW_NAME
-        high_name = high_name or cls.SPLIT_HIGH_NAME
-        if not high_level and isinstance(name_or_loggers, (cls, logging.Logger)):
-            high_level = getattr(name_or_loggers, 'high_level', None)
-        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name, check_global)
+    def add_report_log(cls, names_or_loggers, high_level=None, low_name=None, high_name=None, check_global=False):
+        """Any level record with a name from names_or_loggers is only streamed to stdout when sent to root handlers. """
+        if isinstance(names_or_loggers, (str, logging.Logger)):
+            names_or_loggers = [names_or_loggers]
+        if not high_level and check_global:  # 0 is also not valid for high_level.
+            high_level = getattr(logging.root, '_config_high_level', None)
+        if not high_level:
+            levels = []
+            for ea in names_or_loggers:
+                if isinstance(ea, str):
+                    continue
+                cur_high = getattr(ea, 'high_level', 0)
+                if not cur_high:
+                    cur_levels = (getattr(handle, 'level', 0) or 0 for handle in getattr(ea, 'handlers', []))
+                    cur_levels = [ea for ea in cur_levels if ea] + [getattr(ea, 'level', 0)]
+                    cur_high = max(cur_levels)
+                levels.append(cur_high)
+            # levels = set(getattr(a, 'high_level', a.level) for a in names_or_loggers if isinstance(a, logging.Logger))
+            high_level = min(levels) if levels else None
+        stdout_filter = cls.get_apply_stdout_filter(high_level, low_name)  # check_global is completed, so not passed.
         ignore_filter = cls.get_apply_ignore_filter(high_name)
         success = False
-        names = stdout_filter.allow(name_or_loggers)
-        if isinstance(names, str):
-            names = [names]
-        if isinstance(names, list):
-            success = [ignore_filter.add(name) for name in names]
-            success = all(bool(ea) for ea in success) and len(success) > 0
+        names = stdout_filter.allow(names_or_loggers)
+        if isinstance(names, list):  # allways returns list if given a list.
+            success = [ignore_filter.add(name) for name in names] or [False]
+            success = all(success)
         else:
             raise TypeError("Unexpected return type from adding log record name(s) to allowed for LowPassFilter. ")
         return success
@@ -776,8 +789,9 @@ class CloudLog(logging.Logger):
             raise LookupError(f"Could not find expected {handler_name} handler. ")
         targets = [ea for ea in low_handler.filters if isinstance(ea, LowPassFilter) and ea.title.startswith('stdout')]
         if len(targets) > 1:
-            names = ', '.join(' - '.join((ea.name or '_', ea.title)) for ea in targets)
-            warnings.warn(f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. ")
+            names = ', '.join(' - '.join([ea.name or '_', ea.title]) for ea in targets)
+            message = f"Handler {handler_name} has multiple LowPassFilters ({names}). Using the first one. "
+            warnings.warn(message)
         try:
             stdout_filter = targets[0]
         except IndexError:
@@ -796,7 +810,8 @@ class CloudLog(logging.Logger):
             raise LookupError(f"Could not find expected {handler_name} high handler. ")
         targets = [filter for filter in high_handler.filters if isinstance(filter, IgnoreFilter)]
         if len(targets) > 1:
-            warnings.warn(f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. ")
+            message = f"More than one possible IgnoreFilter attached to {handler_name} handler, using first one. "
+            warnings.warn(message)
         try:
             ignore_filter = targets[0]
         except IndexError:
@@ -973,11 +988,11 @@ class CloudLog(logging.Logger):
             add_client_kwargs['project'] = kwargs['project']
         client_kwargs = {key: kwargs.pop(key) for key in cls.CLIENT_KW if key != 'project' and key in kwargs}
         client_kwargs.update(add_client_kwargs)
+
         if cred_or_path is None and check_global:
             cred_or_path = getattr(logging.root, '._config_log_client', None)
         if isinstance(cred_or_path, (GoogleClient, StreamClient)):
-            client = cred_or_path
-
+            client = cred_or_path  # TODO: ? Update client based on client_kwargs or other kwargs?
             return client
 
         if isinstance(cred_or_path, service_account.Credentials):
@@ -992,8 +1007,9 @@ class CloudLog(logging.Logger):
             log_client = GoogleClient(**client_kwargs)
             assert isinstance(log_client, BaseClientGoogle)
         except Exception as e:
-            logging.exception(e)
-            log_client = StreamClient(**kwargs, **client_kwargs)
+            print(e)
+            client_kwargs = {**kwargs, **client_kwargs}
+            log_client = StreamClient(**client_kwargs)
         return log_client
 
     @staticmethod
@@ -1013,7 +1029,8 @@ class CloudLog(logging.Logger):
         for key in CloudLog.RESOURCE_REQUIRED_FIELDS[res_type]:
             backup_value = project_id if key in pid else ''
             if key not in settings and not backup_value:
-                warnings.warn("Could not find {} for Resource {}. ".format(key, res_type))
+                message = "Could not find {} for Resource {}. ".format(key, res_type)
+                warnings.warn(message, stacklevel=3)
             settings.setdefault(key, backup_value)
         return res_type, settings
 
@@ -1023,9 +1040,11 @@ class CloudLog(logging.Logger):
         project_id = config.get('PROJECT_ID')
         project = config.get('PROJECT') or config.get('GOOGLE_CLOUD_PROJECT') or config.get('GCLOUD_PROJECT')
         if project and project_id and project != project_id:
-            warnings.warn("The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id))
+            message = "The 'project' and 'project_id' are not equal: {} != {} ".format(project, project_id)
+            warnings.warn(message, stacklevel=3)
         if not any((project, project_id)):
-            warnings.warn("Unable to find the critical project id setting from config. Checking environment later. ")
+            message = "Unable to find the critical project id setting from config. Checking environment later. "
+            warnings.warn(message, stacklevel=3)
         labels = {
             'gae_env': config.get('GAE_ENV'),
             'project': project or project_id,
