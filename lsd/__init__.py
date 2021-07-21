@@ -1,6 +1,5 @@
 from flask import Flask
-from .cloudlog import CloudLog
-from .cloudlog import setup_warnings_log
+from cloudlog import CloudLog, setup_warnings_log
 
 
 def create_app(config, config_overrides=dict()):

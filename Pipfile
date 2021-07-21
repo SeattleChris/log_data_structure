@@ -8,7 +8,7 @@ verify_ssl = true
 [packages]
 flask = "*"
 google-cloud-logging = "*"
-google-cloud = "*"
+cloudlog = {editable = true, path = "."}
 
 [requires]
 python_version = "3.7"
