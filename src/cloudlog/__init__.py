@@ -2,7 +2,7 @@ from .cloud_log import CloudLog, CloudParamHandler, IgnoreFilter, LowPassFilter,
 from .log_helpers import get_named_handler, move_handlers, setup_warnings_log
 from .range_helpers import levels_covered
 
-__module_name__ = 'cloudlog'
+__modulename__ = 'cloudlog'
 __version__ = '0.1.0'
 __author__ = 'Chris L Chapman'
 __license__ = 'MIT'
