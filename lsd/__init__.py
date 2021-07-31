@@ -13,11 +13,8 @@ def create_app(config, config_overrides=dict()):
         app.config.update(config_overrides)
     CloudLog.attach_loggers(app, config, _test_log=True, **log_setup)
 
-    # Setup the data model. Import routes and events.
-    with app.app_context():
+    with app.app_context():  # Setup the data model. Import routes and events.
         from . import routes  # noqa: F401
-        # from . import model_db
-        # model_db.init_app(app)
 
     @app.shell_context_processor
     def expected_shell_imports():
